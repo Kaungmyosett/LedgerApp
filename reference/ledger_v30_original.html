@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="my">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>2D Ledger — Commission Entry</title>
+<style>
+:root{--bg:#f3f6fb;--card:#fff;--ink:#172235;--muted:#718096;--line:#e5eaf2;--navy:#111c2e;--blue:#3267e9;--green:#159b69;--orange:#d88922;--red:#d94c55}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,-apple-system,"Noto Sans Myanmar",sans-serif}button,input,textarea{font:inherit}button{cursor:pointer;border:0}.app{max-width:1100px;margin:auto;min-height:100vh}header{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}.brand{display:flex;gap:11px;align-items:center}.logo{height:40px;width:40px;border-radius:13px;background:var(--blue);display:grid;place-items:center;font-weight:900}.brand h1{font-size:17px;margin:0}.brand small{color:#aebbd0;font-size:11px}.role{font-size:12px;color:#dce7f8;background:#263750;padding:7px 10px;border-radius:25px}
+main{padding:22px}.intro{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}.intro h2{font-size:23px;margin:0}.intro p{margin:4px 0 0;color:var(--muted);font-size:13px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:17px}.stat,.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}.stat label{color:var(--muted);font-size:12px}.stat strong{display:block;font-size:24px;margin-top:5px}.tabs{display:flex;gap:7px;background:#e9eef6;padding:5px;border-radius:13px;margin-bottom:16px}.tab{padding:9px 14px;background:transparent;color:#536176;border-radius:9px;font-weight:650}.tab.active{background:white;color:#1c2b43}.btn{padding:10px 14px;border-radius:10px;background:var(--blue);color:white;font-weight:700}.btn.secondary{background:#edf2ff;color:#2858ce}.btn.ghost{background:#f1f4f8;color:#46546a}.btn.danger{background:#fff0f0;color:var(--red)}.btn.small{font-size:12px;padding:8px 11px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.panel h3{font-size:16px;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:3px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:520px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--muted);font-weight:650;background:#fafbfd}.money{font-variant-numeric:tabular-nums;font-weight:700}.pill{display:inline-block;border-radius:25px;padding:4px 8px;background:#edf2ff;color:#315dc5;font-size:11px}.empty{text-align:center;padding:25px;color:var(--muted);font-size:13px}
+.formrow{display:flex;gap:10px;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:130px;margin-bottom:11px}.field label{font-size:12px;color:#5e6b7e;font-weight:650}.field input,.field textarea{width:100%;border:1px solid #dce3ed;border-radius:10px;padding:11px;background:#fff;color:#111827;outline:none}input,textarea,select{color:#111827}input::placeholder,textarea::placeholder{color:#6b7280;opacity:1}.field textarea{min-height:92px;resize:vertical;font-family:ui-monospace,monospace}.field input:focus,.field textarea:focus{border-color:#7295f4;box-shadow:0 0 0 3px #3267e91a}
+.user-row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}.avatar{height:40px;width:40px;border-radius:13px;background:#eaf0ff;color:#315dc5;display:grid;place-items:center;font-weight:800}.user-info{flex:1;min-width:0}.user-info b{display:block}.user-info small{color:var(--muted);font-size:11px}.user-actions{display:flex;gap:6px}
+.modal-back{position:fixed;inset:0;background:#10182788;display:grid;place-items:center;padding:14px;z-index:10}.modal{background:white;width:min(650px,100%);max-height:92vh;overflow:auto;border-radius:18px;padding:20px;box-shadow:0 20px 60px #0003}.modal h3{margin:0 0 4px}.close-row{display:flex;justify-content:space-between;align-items:start;margin-bottom:16px}.close{background:#f0f3f8;border-radius:9px;padding:6px 10px;font-size:18px}.modebar{display:flex;gap:7px;background:#eef2f8;border-radius:11px;padding:4px;margin:13px 0}.modebar button{flex:1;background:transparent;border-radius:8px;padding:9px;color:#56647a;font-size:13px;font-weight:650}.modebar button.active{background:#fff;color:#2456cf;box-shadow:0 2px 6px #17223512}.preview{background:#f7f9fc;border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}.preview table{min-width:0}.preview th,.preview td{padding:7px}.total{display:flex;justify-content:space-between;align-items:center;font-weight:750;padding-top:10px}.hint{font-size:12px;color:#68768a;background:#f4f7fc;border-radius:10px;padding:10px;margin:10px 0}.error{color:var(--red);font-size:12px;margin:7px 0}.success{color:var(--green);font-size:12px}.bottom{display:none}
+@media(max-width:700px){main{padding:15px 13px 30px}header{padding:13px 15px}.intro h2{font-size:20px}.stats{gap:8px}.stat{padding:12px}.stat strong{font-size:20px}.tabs{overflow:auto}.tab{white-space:nowrap;padding:9px 11px;font-size:12px}.user-row{align-items:flex-start}.user-actions{flex-direction:column}.user-actions .btn{white-space:nowrap}.modal{padding:16px}.bottom{display:block}}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div class="brand"><div class="logo">2D</div><div><h1>2D LEDGER</h1><small>Commission & Number Ledger</small></div></div><span class="role">ADMIN MODE · DEMO</span></header>
+<main>
+<div class="intro"><div><h2 id="title">Commission Users</h2><p id="desc">User တစ်ယောက်ချင်းစီရဲ့ ဘေးက ထိုးရန်ကို နှိပ်ပြီး စာရင်းသွင်းပါ</p></div><div class="formrow" style="justify-content:flex-end;flex:0 0 auto"><button class="btn secondary" onclick="openDrawResults()">ထွက်ဂဏန်း</button><button class="btn secondary" onclick="openGlobalBlocked()">မရဂဏန်း</button><button class="btn" onclick="openAddUser()">＋ User အသစ်</button></div></div>
+<div class="stats" id="stats"></div>
+<div class="tabs"><button class="tab active" id="tabUsers" onclick="showTab('users')">Commission Users</button><button class="tab" id="tabBets" onclick="showTab('bets')">တင်စာရင်းအားလုံး</button><button class="tab" id="tabNumbers" onclick="showTab('numbers')">Numbers 00–99</button><button class="tab" id="tabCover" onclick="showTab('cover')">ကာဂဏန်းထုတ်ရန်</button><button class="tab" id="tabHistory" onclick="showTab('history')">မှတ်တမ်းများ</button></div>
+<section id="usersPanel" class="panel"></section>
+<section id="betsPanel" class="panel" hidden></section>
+<section id="numbersPanel" class="panel" hidden></section>
+<section id="coverPanel" class="panel" hidden></section>
+<section id="historyPanel" class="panel" hidden></section>
+</main>
+</div>
+<div id="modalRoot"></div><div id="toastRoot"></div>
+<script>
+const STORE='ledgerCommissionFormatV2';
+const initial={users:[{id:'u1',name:'ကိုအောင်',username:'aung',commissionPercent:10},{id:'u2',name:'မမေ',username:'may',commissionPercent:10}],entries:[],drawResults:[]};
+let db;try{db=JSON.parse(localStorage.getItem(STORE))||initial}catch(e){db=initial}
+db.drawResults=db.drawResults||[];db.blockedNumbers=db.blockedNumbers||[];db.coverVouchers=db.coverVouchers||[];db.finalizedRecords=db.finalizedRecords||[];db.users.forEach(u=>{if(u.commissionPercent===undefined)u.commissionPercent=10;if(u.odd===undefined)u.odd=80});
+let currentUserId=null,entryMode='format',parsedRows=[];
+const fmt=n=>Number(n||0).toLocaleString('en-US');
+const save=()=>localStorage.setItem(STORE,JSON.stringify(db));
+const userName=id=>db.users.find(u=>u.id===id)?.name||'Unknown';
+function toast(s){const root=document.getElementById('toastRoot');root.innerHTML=`<div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172235;color:white;padding:11px 16px;border-radius:11px;z-index:30;font-size:13px">${s}</div>`;setTimeout(()=>root.innerHTML='',2200)}
+function userEntries(id){return db.entries.filter(e=>e.userId===id)}
+function sumEntries(es){return es.reduce((s,e)=>s+(Array.isArray(e.lines)?e.lines.reduce((t,x)=>t+Number(x.amount||0),0):Number(e.amount||0)),0)}
+function stats(){let all=db.entries;document.getElementById('stats').innerHTML=`<div class="stat"><label>Commission Users</label><strong>${db.users.length}</strong></div><div class="stat"><label>ဘောင်ချာ / Entry</label><strong>${all.length}</strong></div><div class="stat"><label>စုစုပေါင်းတင်ငွေ</label><strong>${fmt(sumEntries(all))}</strong></div>`}
+function showTab(tab){['users','bets','numbers','cover','history'].forEach(x=>{document.getElementById(x+'Panel').hidden=x!==tab;document.getElementById('tab'+x[0].toUpperCase()+x.slice(1)).classList.toggle('active',x===tab)});document.getElementById('title').textContent=tab==='users'?'Commission Users':tab==='bets'?'တင်စာရင်းအားလုံး':tab==='numbers'?'Numbers 00–99':tab==='cover'?'ကာဂဏန်းထုတ်ရန်':'မှတ်တမ်းများ';document.getElementById('desc').textContent=tab==='users'?'User တစ်ယောက်ချင်းစီရဲ့ ဘေးက ထိုးရန်ကို နှိပ်ပြီး စာရင်းသွင်းပါ':tab==='bets'?'User အလိုက် ထည့်သွင်းထားသော စာရင်းများ':tab==='numbers'?'ဂဏန်းတစ်ကွက်ချင်းစီ၏ စုစုပေါင်းတင်ငွေ':tab==='cover'?'00 မှ 99 အထိ ရှိပြီးသားတင်ငွေထဲမှ ပမာဏကို အလိုအလျောက် ကာပါ':'အပြီးစာရင်းချုပ်ထားသော ရလဒ်များ';render()}
+function render(){stats();renderUsers();renderBets();renderNumbers();renderCover();renderHistory()}
+function renderUsers(){let root=document.getElementById('usersPanel');root.innerHTML=`<div class="panel-head"><div><h3>Commission User စာရင်း</h3><div class="sub">ထိုးရန် button ကို နှိပ်ပြီး User တစ်ယောက်ချင်းစီအတွက် ဂဏန်းထည့်ပါ</div></div></div>`+(db.users.length?db.users.map(u=>{let es=userEntries(u.id);return `<div class="user-row"><div class="avatar">${u.name.slice(0,1)}</div><div class="user-info"><b>${esc(u.name)}</b><small>@${esc(u.username)} · Commission ${fmt(u.commissionPercent)}% · The Odd ${fmt(u.odd)}x · ${es.length} ကြိမ် · ပေးငွေ ${u.payment==null||u.payment===''?'—':fmt(u.payment)+' ကျပ်'} · စုစုပေါင်း ${fmt(sumEntries(es))} ကျပ်</small></div><div class="user-actions"><button class="btn small" onclick="openBet('${u.id}')">＋ ထိုးရန်</button><button class="btn small secondary" onclick="viewUser('${u.id}')">စာရင်းကြည့်</button><button class="btn small ghost" onclick="openSettlement('${u.id}')">စာရင်းတွက်မည်</button><button class="btn small secondary" onclick="editUser('${u.id}')">Edit</button><button class="btn small danger" onclick="deleteUser('${u.id}')">Delete</button></div></div>`}).join(''):'<div class="empty">User မရှိသေးပါ။ User အသစ်ထည့်ပါ။</div>')+`<div style="display:flex;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)"><button class="btn" onclick="openFinalizeConfirm()">အပြီးစာရင်းချုပ်မည်</button></div>`}
+function renderBets(){let es=[...db.entries].sort((a,b)=>b.created.localeCompare(a.created));document.getElementById('betsPanel').innerHTML=`<div class="panel-head"><div><h3>တင်စာရင်းအားလုံး</h3><div class="sub">Format နှင့် တစ်လုံးချင်းထည့်ထားသော မှတ်တမ်းများ</div></div><span class="pill">${es.length} records</span></div>`+entryTable(es,false)}
+function numberBalances(){
+  // Gross stake comes from user vouchers. "စားငွ" is the amount allocated/eaten
+  // by saved cover actions. "ကာငွ" is ONLY the latest saved cover voucher list;
+  // without a saved cover voucher, cover must be zero (not gross minus eaten).
+  const gross=Object.create(null), eaten=Object.create(null), cover=Object.create(null);
+  const norm=n=>String(n??'').trim().padStart(2,'0');
+  db.entries.forEach(e=>(e.lines||[]).forEach(x=>{const n=norm(x.num);if(/^\d{2}$/.test(n))gross[n]=(gross[n]||0)+Math.max(0,Number(x.amount)||0)}));
+  (db.coverVouchers||[]).forEach(v=>{
+    (v.allocations||[]).forEach(x=>{const n=norm(x.num);if(/^\d{2}$/.test(n))eaten[n]=(eaten[n]||0)+Math.max(0,Number(x.amount)||0)});
+  });
+  const vouchers=[...(db.coverVouchers||[])].sort((a,b)=>String(a.created||'').localeCompare(String(b.created||'')));
+  const latest=vouchers.length?vouchers[vouchers.length-1]:null;
+  if(latest){
+    (latest.remainingLines||[]).forEach(x=>{const n=norm(x.num);if(/^\d{2}$/.test(n))cover[n]=(cover[n]||0)+Math.max(0,Number(x.amount)||0)});
+  }
+  const out={};
+  for(let i=0;i<100;i++){
+    const n=String(i).padStart(2,'0'),g=gross[n]||0,e=eaten[n]||0,c=cover[n]||0;
+    // Before the first cover voucher, the original stake is available to cover.
+    // After a voucher exists, only its latest remaining cover-list value is available.
+    out[n]={gross:g,covered:e,cover:c,remaining:latest?c:g};
+  }
+  return out;
+}
+function renderNumbers(){
+ let map=numberBalances(),rows=Array.from({length:100},(_,i)=>String(i).padStart(2,'0'));
+ let latestDraw=[...(db.drawResults||[])].filter(x=>x.number||x.morning||x.evening).sort((a,b)=>b.date.localeCompare(a.date))[0];
+ let winning=latestDraw?String(latestDraw.number||latestDraw.morning||latestDraw.evening||'').padStart(2,'0'):'';
+ let totalGross=0,totalEaten=0,totalCover=0;
+ Object.values(map).forEach(x=>{totalGross+=x.gross;totalEaten+=x.covered;totalCover+=x.cover});
+ const winBalance=winning?map[winning]:{gross:0,covered:0,cover:0,remaining:0};
+ // Per-user winning stakes determine the weighted average Odd and the
+ // average commission percentage among users who actually hit the draw.
+ const winUsers=[];
+ if(winning){
+   db.users.forEach(u=>{
+     const stake=db.entries.filter(e=>e.userId===u.id).flatMap(e=>e.lines||[])
+       .filter(x=>String(x.num).padStart(2,'0')===winning)
+       .reduce((sum,x)=>sum+Math.max(0,Number(x.amount)||0),0);
+     if(stake>0)winUsers.push({stake,odd:Number(u.odd??80),commission:Number(u.commissionPercent||0)});
+   });
+ }
+ const winUserStake=winUsers.reduce((a,x)=>a+x.stake,0);
+ const avgOdd=winUserStake?winUsers.reduce((a,x)=>a+x.stake*x.odd,0)/winUserStake:0;
+ const avgWinnerCommission=winUsers.length?winUsers.reduce((a,x)=>a+x.commission,0)/winUsers.length:0;
+ // Keep the settlement formulas as specified: dealer cover deducts 13%
+ // and the Odd payout against eaten winning stake; own eaten deducts the
+ // winning-users' average commission and Odd payout against covered stake.
+ const yourEaten=totalEaten-(avgWinnerCommission/100*totalEaten)-(avgOdd*winBalance.covered);
+ const otherDealerCover=totalCover-(totalCover*0.13)-(avgOdd*winBalance.cover);
+
+ document.getElementById('numbersPanel').innerHTML=`<div class="panel-head"><div><h3>ဂဏန်း 00–99</h3><div class="sub">တင်ငွ၊ ကာဘောင်ချာထုတ်ရာမှ စားငွနှင့် နောက်ဆုံးသိမ်းထားသော ကာဘောင်ချာစာရင်းထဲရှိ ကာငွကို သီးခြားပြထားပါသည်။</div></div></div>
+ <div class="table-wrap"><table><thead><tr><th>ဂဏန်း</th><th>စုစုပေါင်းတင်ငွ</th><th>ဘောင်ချာထုတ်ပြီး စားငွ</th><th>ကာငွ (ကာဘောင်ချာ)</th></tr></thead><tbody>${rows.map(n=>{let x=map[n],isWin=n===winning;return `<tr${isWin?' style="background:#fff0f0"':''}><td><b${isWin?' style="color:#d94c55;font-size:16px"':''}>${n}</b>${isWin?' <span style="color:#d94c55;font-size:11px;font-weight:700">ထွက်ဂဏန်း</span>':''}</td><td class="money">${fmt(x.gross)} ကျပ်</td><td>${fmt(x.covered)} ကျပ်</td><td class="money">${fmt(x.cover)} ကျပ်</td></tr>`}).join('')}</tbody><tfoot><tr style="background:#f3f6fb;font-weight:800"><td>စုစုပေါင်း</td><td class="money">${fmt(totalGross)} ကျပ်</td><td class="money">${fmt(totalEaten)} ကျပ်</td><td class="money">${fmt(totalCover)} ကျပ်</td></tr></tfoot></table></div>
+ <div class="preview" style="margin-top:14px"><b>ထွက်ဂဏန်းနှင့် စာရင်းချုပ်</b>${winning?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;margin-top:10px"><div class="stat"><label>ထွက်ဂဏန်း၏ တင်ငွ (${winning})</label><strong>${fmt(winBalance.gross)}</strong><small>ကျပ်</small></div><div class="stat"><label>သင်၏စားငွေ</label><strong style="color:${yourEaten>=0?'var(--green)':'var(--red)'}">${fmt(yourEaten)}</strong><small>ကျပ်</small></div><div class="stat"><label>တခြားဒိုင်ကာငွေ</label><strong style="color:${otherDealerCover>0?'var(--red)':'var(--green)'}">${fmt(Math.abs(otherDealerCover))}</strong><small>ကျပ်</small><small>${otherDealerCover>0?"ဒိုင်ကိုပေးရန်":"ဒိုင်စီမှရရန်"}</small></div></div><div class="hint" style="margin-top:10px">တွက်ချက်ရာတွင် ပေါက်သူများ၏ ပျမ်းမျှ Commission ${fmt(avgWinnerCommission)}% နှင့် ပေါက်သူများ၏ တင်ငွအလိုက် အလေးပေးတွက်ထားသော The Odd ${fmt(avgOdd)}x ကို အသုံးပြုထားပါသည်။</div>`:'<div class="hint" style="margin-top:10px">ထွက်ဂဏန်း မရှိသေးပါ။ ထွက်ဂဏန်းထည့်ပြီးမှ ထွက်ဂဏန်း၏ တင်ငွ၊ သင်၏စားငွနှင့် တခြားဒိုင်ကာငွကို ပြသပါမည်။</div>'}</div>`;
+}
+function renderCover(){
+  let root=document.getElementById('coverPanel');if(!root)return;
+  let map=numberBalances(),gross=0,covered=0,remaining=0;
+  Object.values(map).forEach(x=>{gross+=x.gross;covered+=x.covered;remaining+=x.remaining});
+  const totalEatenSaved=(db.coverVouchers||[]).reduce((sum,v)=>sum+(v.allocations||[]).reduce((a,x)=>a+Math.max(0,Number(x.amount)||0),0),0);
+  // Sum each saved voucher's own cover-list total.
+  // Each voucher is an individual receipt; the dashboard total adds them together.
+  const voucherCoverTotal=(db.coverVouchers||[]).reduce((grand,v)=>grand+(v.remainingLines||[]).reduce((sum,line)=>sum+Math.max(0,Number(line.amount)||0),0),0);
+  let vouchers=[...db.coverVouchers].sort((a,b)=>b.created.localeCompare(a.created));
+  let latest=window.showingCoverReceiptId?db.coverVouchers.find(v=>v.id===window.showingCoverReceiptId):null;
+  root.innerHTML=`<div class="panel-head"><div><h3>ကာဂဏန်းထုတ်ရန်</h3><div class="sub">ကာမည့် amount ကို ရိုက်ထည့်ရုံဖြင့် စားပြီးသားငွေကို နုတ်ပြီး ကျန်တင်ငွေမှ မူလတင်ငွေရှိသော ဂဏန်းတစ်ကွက်စီမှ သတ်မှတ်ပမာဏကို ကာပြီး စာရင်းကို အရင်ပြပေးပါမည်။</div></div></div>
+  <div class="stats" style="grid-template-columns:repeat(3,1fr);margin:12px 0">
+   <div class="stat"><label>00–99 မူလစုစုပေါင်းတင်ငွေ</label><strong>${fmt(gross)}</strong><small>ကျပ်</small></div>
+   <div class="stat"><label>စားပြီး</label><strong>${fmt(totalEatenSaved)}</strong><small>ကျပ်</small></div>
+   <div class="stat"><label>ဘောင်ချာများမှ စုစုပေါင်းကာငွေ</label><strong>${fmt(voucherCoverTotal)}</strong><small>ကျပ်</small></div>
+  </div>
+  <div class="field"><label>ဂဏန်းတစ်ကွက်စီ စားမည့်ပမာဏ (ကျပ်)</label><input id="coverAmount" type="number" min="1" step="1" inputmode="numeric" placeholder="ဥပမာ 2000" oninput="previewCover()"></div>
+  <div id="coverPreview"><div class="hint">ကာမည့် amount ကို ရိုက်ထည့်ပါ။ ကာမည့်စာရင်းကို ဒီနေရာမှာ အရင်ပြပေးပါမယ်။</div></div>
+  ${latest?coverReceiptHTML(latest):''}
+  <div class="preview"><b>ကာထားသော ဘောင်ချာများ</b>${vouchers.length?`<div class="table-wrap"><table><thead><tr><th>ဘောင်ချာ</th><th>ဘောင်ချာမှ စုစုပေါင်းကာငွ</th><th>အသေးစိတ်</th><th>ရက်စွဲ</th><th>လုပ်ဆောင်ချက်</th></tr></thead><tbody>${vouchers.map(v=>`<tr><td>${esc(v.voucher)}</td><td class="money">${fmt(Number(v.coverListTotal ?? v.remainingTotal ?? (v.remainingLines||[]).reduce((a,x)=>a+Number(x.amount||0),0)))} ကျပ်</td><td>${(v.remainingLines||[]).map(x=>x.num+'='+fmt(x.amount)).join(', ')}</td><td>${esc(v.date)}</td><td><button class="btn small secondary" onclick="showCoverReceipt('${v.id}')">ဘောင်ချာကြည့်ရန်</button> <button class="btn small danger" onclick="deleteCoverVoucher('${v.id}')">ဖျက်ရန်</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">ကာထားသော ဘောင်ချာ မရှိသေးပါ</div>'}</div>`;
+}
+function buildCoverPlan(requested){
+  let balances=numberBalances(),allocations=[];
+  // The admin-entered amount is deducted from EACH number with a positive
+  // original stake, limited to that number's remaining balance.
+  for(let i=0;i<100;i++){
+    const num=String(i).padStart(2,'0');
+    const available=balances[num].remaining;
+    if(balances[num].gross>0 && available>0){
+      const take=Math.min(requested,available);
+      if(take>0) allocations.push({num,amount:take});
+    }
+  }
+  const actual=allocations.reduce((sum,x)=>sum+x.amount,0);
+  return {balances,allocations,requested,actual,shortfall:0};
+}
+function previewCover(){
+  let host=document.getElementById('coverPreview');if(!host)return;
+  let requested=Number(document.getElementById('coverAmount')?.value);
+  if(!Number.isFinite(requested)||requested<=0||!Number.isInteger(requested)){
+    host.innerHTML='<div class="hint">ကာမည့် amount ကို ကျပ်ပြည့်ကိန်းဖြင့် ရိုက်ထည့်ပါ။</div>';return;
+  }
+  let plan=buildCoverPlan(requested),map=plan.balances;
+  let gross=0,prior=0,after=0;
+  Object.values(map).forEach(x=>{gross+=x.gross;prior+=x.covered;after+=x.remaining});
+  after-=plan.actual;
+  let current={};plan.allocations.forEach(x=>current[x.num]=(current[x.num]||0)+x.amount);
+  let rows=Array.from({length:100},(_,i)=>String(i).padStart(2,'0')).filter(n=>map[n].gross>0);
+  if(!rows.length){host.innerHTML='<div class="empty">00 မှ 99 အထိ မူလတင်ငွေစာရင်း မရှိသေးပါ။</div>';return;}
+  const totalEat=plan.actual;
+  const totalCover=after;
+  host.innerHTML=`<div class="preview"><b>ကာမည့်စာရင်း (ဘောင်ချာမသိမ်းရသေးပါ)</b><div class="hint">အရင်ကာပြီး ပမာဏကို သိမ်းပြီးသား ဘောင်ချာများ၏ ဂဏန်းတစ်ကွက်ချင်းစီ allocation မှ တွက်ထားပါသည်။ မူလတင်ငွေ အသစ်တိုးလာမှသာ ထိုဂဏန်းတွင် ထပ်ကာနိုင်ပါသည်။</div>
+   <div class="table-wrap"><table><thead><tr><th>ဂဏန်း</th><th>မူလတင်ငွေ</th><th>အရင်ကာပြီး</th><th>ယခုစားငွေ</th><th>ကာငွေ</th></tr></thead><tbody>${rows.map(n=>{let b=map[n],now=current[n]||0;return `<tr><td><b>${n}</b></td><td>${fmt(b.gross)} ကျပ်</td><td>${fmt(b.cover)} ကျပ်</td><td>${fmt(now)} ကျပ်</td><td class="money">${fmt(b.remaining-now)} ကျပ်</td></tr>`}).join('')}</tbody></table></div>
+   <div style="margin-top:14px;text-align:right;color:#159b69;font-weight:800;line-height:1.9"><div>စုစုပေါင်းစားငွေ — ${fmt(totalEat)} ကျပ်</div><div>စုစုပေါင်းကာငွေ — ${fmt(totalCover)} ကျပ်</div></div>
+   <button class="btn" style="width:100%;margin-top:14px" onclick="saveCover()" ${!Number.isFinite(requested) || requested<=0 || !Number.isInteger(requested) ? 'disabled' : ''}>တင်မည် · ဘောင်ချာသိမ်းမည်</button>
+  </div>`;
+}
+function coverReceiptHTML(v){
+  const lines=v.remainingLines||[];
+  const coverListTotal=Number(v.coverListTotal ?? v.remainingTotal ?? lines.reduce((a,x)=>a+Number(x.amount||0),0));
+  const copyText=lines.map(x=>x.num+'='+fmt(x.amount)).join('\n')+'\nTotal='+fmt(coverListTotal);
+  return `<div class="preview" id="coverReceipt"><div class="panel-head"><div><b>ကာငွေစာရင်း</b><div class="sub">ဘောင်ချာအမှတ် — ${esc(v.voucher)} · ${esc(v.date)}</div></div><button class="btn small ghost" onclick="closeCoverReceipt()">ဘောင်ချာပိတ်ရန်</button></div>
+   <div class="receipt-copy" style="background:#fff;color:#111;padding:14px;border-radius:10px;margin-top:10px"><pre id="coverCopyText" style="white-space:pre-wrap;color:#111;font:600 15px/1.8 monospace;margin:0">${esc(copyText)}</pre><button class="btn small secondary" style="margin-top:10px" onclick="copyCoverReceipt('${v.id}')">ကာငွေစာရင်း Copy ကူးရန်</button></div></div>`;
+}
+function copyCoverReceipt(id){let v=db.coverVouchers.find(x=>x.id===id);if(!v)return;let total=Number(v.coverListTotal ?? v.remainingTotal ?? (v.remainingLines||[]).reduce((a,x)=>a+Number(x.amount||0),0));let text=(v.remainingLines||[]).map(x=>x.num+'='+fmt(x.amount)).join('\n')+'\nTotal='+fmt(total);if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('စာရင်း Copy ကူးပြီးပါပြီ')).catch(()=>fallbackCopy(text))}else fallbackCopy(text)}
+function fallbackCopy(text){let el=document.createElement('textarea');el.value=text;document.body.appendChild(el);el.select();try{document.execCommand('copy');toast('စာရင်း Copy ကူးပြီးပါပြီ')}catch(e){toast('Copy မအောင်မြင်ပါ')}el.remove()}
+function showCoverReceipt(id){window.showingCoverReceiptId=id;renderCover();document.getElementById('coverReceipt')?.scrollIntoView({behavior:'smooth',block:'start'})}
+function deleteCoverVoucher(id){
+  const v=db.coverVouchers.find(x=>x.id===id);if(!v)return;
+  modal(`<div class="close-row"><div><h3>ဘောင်ချာဖျက်ရန် အတည်ပြုပါ</h3><div class="sub">${esc(v.voucher)} ကို ဖျက်မှာ သေချာပါသလား။ ဖျက်ပြီးပါက ကျန်ရှိသော နောက်ဆုံးဘောင်ချာအတိုင်း အရင်ကာပြီးစာရင်းကို ပြန်တွက်ပါမည်။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="formrow" style="justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">မဖျက်တော့ပါ</button><button class="btn danger" onclick="confirmDeleteCoverVoucher('${v.id}')">ဖျက်မည်</button></div>`);
+}
+function confirmDeleteCoverVoucher(id){
+  const before=db.coverVouchers.length;
+  db.coverVouchers=db.coverVouchers.filter(x=>x.id!==id);
+  if(db.coverVouchers.length===before){closeModal();toast('ဖျက်မည့်ဘောင်ချာ မတွေ့ပါ');return}
+  if(window.showingCoverReceiptId===id)window.showingCoverReceiptId=null;
+  save();closeModal();render();toast('ဘောင်ချာကို ဖျက်ပြီးပါပြီ');
+}
+function closeCoverReceipt(){window.showingCoverReceiptId=null;renderCover()}
+function showNoCoverAlert(){
+  modal(`<div class="close-row"><div><h3 style="color:#b42318">ကာငွေမရှိပါ</h3><div class="sub">သိမ်းရန် ကာငွေ မရှိပါ။ ဘောင်ချာကို မသိမ်းထားပါ။</div></div><button class="close" onclick="closeModal()">×</button></div><div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">အိုကေ</button></div>`);
+}
+function saveCover(){
+  let requested=Number(document.getElementById('coverAmount')?.value);
+  if(!Number.isFinite(requested)||requested<=0||!Number.isInteger(requested)){toast('ကာမည့် amount ကို ကျပ်ပြည့်ကိန်းဖြင့် ထည့်ပါ');return}
+  let plan=buildCoverPlan(requested),actual=plan.actual;
+  const projectedRemaining=Object.values(plan.balances).reduce((sum,x)=>sum+x.remaining,0)-actual;
+  if(actual<=0 || projectedRemaining<=0){showNoCoverAlert();return}
+  let id='C'+Date.now().toString().slice(-8),date=new Date().toLocaleDateString('en-CA');
+  let afterMap=plan.balances, current={};plan.allocations.forEach(x=>current[x.num]=(current[x.num]||0)+Number(x.amount||0));let remainingLines=Array.from({length:100},(_,i)=>String(i).padStart(2,'0')).map(num=>({num,amount:Math.max(0,afterMap[num].remaining-(current[num]||0))})).filter(x=>x.amount>0);let remainingTotal=remainingLines.reduce((a,x)=>a+x.amount,0);
+  let voucher={id,voucher:id,amount:remainingTotal,coverListTotal:remainingTotal,requestedAmount:requested,allocations:plan.allocations,remainingLines,remainingTotal,date,created:new Date().toISOString()};
+  db.coverVouchers.push(voucher);window.showingCoverReceiptId=null;save();render();
+  toast('ကာဘောင်ချာ '+id+' ထုတ်ပြီးပါပြီ');
+  document.getElementById('coverReceipt')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function entryTable(es,allowEdit=true){if(!es.length)return '<div class="empty">စာရင်းမရှိသေးပါ။</div>';return `<div class="table-wrap"><table><thead><tr><th>User</th><th>ဘောင်ချာ</th><th>ထည့်သွင်းပုံ</th><th>ဂဏန်းစာရင်း</th><th>စုစုပေါင်း</th><th>ရက်စွဲ</th>${allowEdit?'<th>လုပ်ဆောင်ချက်</th>':''}</tr></thead><tbody>${es.map(e=>`<tr><td><b>${esc(userName(e.userId))}</b></td><td>${e.voucher}</td><td><span class="pill">${e.mode==='format'?'Format':'တစ်လုံးချင်း'}</span></td><td>${e.lines.map(x=>x.num+'='+fmt(x.amount)).join(', ')}</td><td class="money">${fmt(sumEntries(e.lines))}</td><td>${e.date}</td>${allowEdit?`<td><button class="btn small secondary" onclick="editEntry('${e.id}')">ဘောင်ချာကို ပြင်ရန်</button> <button class="btn small danger" onclick="deleteEntry('${e.id}')">ဘောင်ချာကို ဖျက်ရန်</button></td>`:''}</tr>`).join('')}</tbody></table></div>`}
+function openBet(id){currentUserId=id;entryMode='format';parsedRows=[];modal(`<div class="close-row"><div><h3>${esc(userName(id))} — ဂဏန်းထိုးရန်</h3><div class="sub">ဒီစာရင်းအားလုံးကို ဒီ Commission User နဲ့ ချိတ်ဆက်သိမ်းမယ်</div></div><button class="close" onclick="closeModal()">×</button></div><div class="hint">မရဂဏန်း: <b>${esc((db.blockedNumbers||[]).join(', ')||'မရှိ')}</b> — User အားလုံးအတွက် တူညီပြီး ထိုးမရပါ။</div><div class="modebar"><button id="formatMode" class="active" onclick="setMode('format')">Format နဲ့ထိုးရန်</button><button id="manualMode" onclick="setMode('manual')">တစ်လုံးချင်းထိုးရန်</button></div><div id="formatPane"><div class="field"><label>Python နမူနာ Format အတိုင်း ထည့်ရန် (စာကြောင်းများစွာလည်းရ)</label><textarea id="formatInput" placeholder="12/45-R1000&#10;00-5000&#10;55-3000&#10;51 2000&#10;1PP 1000&#10;1TO 1000&#10;1BO 1000&#10;1BK 1000&#10;Apu 1000&#10;Nyiko 1000&#10;Power 1000&#10;Natkat 1000"></textarea></div><div class="hint"><b>ဥပမာ —</b> 12/45-R1000 = 12,21,45,54 (R ပါလျှင် Reverse ပါ)<br>
+12/45 1000 သို့မဟုတ် 12/45=1000 = ရိုက်ထားသည့်ဂဏန်းများသာ<br>00-5000 = 00 ကို 5000 ကျပ် (ဂဏန်း-ငွေပမာဏ)<br>
+51 R2000 = 51 နှင့် 15 · 51 2000 = 51 သာ<br>
+1ပါတ် ဆိုရင် 1PP / 1ထိပ် ဆိုရင် 1TO / 1ပိတ် ဆိုရင် 1BO / 1ဘရိတ် ဆိုရင် 1BK<br>နောက်တွင် ထိုးမည့် amount ထည့်ရန်<br>အပူး ဆိုရင် Apu / ညီကို ဆိုရင် Nyiko<br>ပါဝါ ဆိုရင် Power / နက္ခတ်ဆိုရင် Natkat နောက်တွင် ထိုးမည့် amount ထည့်ရန်</div><button class="btn" style="width:100%" onclick="previewFormat()">စာရင်းတွက်ကြည့်မယ်</button><div id="formatPreview"></div></div><div id="manualPane" hidden><div id="manualRows"></div><button class="btn secondary" onclick="addManualRow()">＋ နောက်ထပ်တစ်ကွက်ထည့်ရန်</button><div id="manualTotal" class="total"></div><button class="btn" style="width:100%;margin-top:13px" onclick="saveManual()">စာရင်းသိမ်းမယ်</button></div>`);addManualRow()}
+function setMode(m){entryMode=m;document.getElementById('formatMode').classList.toggle('active',m==='format');document.getElementById('manualMode').classList.toggle('active',m==='manual');document.getElementById('formatPane').hidden=m!=='format';document.getElementById('manualPane').hidden=m!=='manual'}
+function parseFormat(raw){
+  const bets=[], errors=[];
+  const brotherSets={
+    0:[0,19,28,37,46,55,64,73,82,91],1:[1,10,29,38,47,56,65,74,83,92],
+    2:[2,11,20,39,48,57,66,75,84,93],3:[3,12,21,30,49,58,67,76,85,94],
+    4:[4,13,22,31,40,59,68,77,86,95],5:[5,14,23,32,41,50,69,78,87,96],
+    6:[6,15,24,33,42,51,60,79,88,97],7:[7,16,25,34,43,52,61,70,89,98],
+    8:[8,17,26,35,44,53,62,71,80,99],9:[9,18,27,36,45,54,63,72,81,90]
+  };
+  const special={
+    apu:[0,11,22,33,44,55,66,77,88,99],
+    nyiko:[12,21,23,32,34,43,45,54,56,65,67,76,78,87,89,98,90,9,1,10],
+    power:[5,16,27,38,49,50,61,72,83,94],
+    natkat:[7,18,24,35,69,70,81,42,53,96]
+  };
+  const add=(num,amount)=>{ if(Number.isInteger(num)&&num>=0&&num<=99&&Number.isFinite(amount)&&amount>0) bets.push({num:String(num).padStart(2,'0'),amount}); };
+  const addSpecial=(key,amount)=>special[key].forEach(n=>add(n,amount));
+  const lines=String(raw||'').replace(/\r/g,'\n').split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);
+  for(const line of lines){
+    let m, amount, nums;
+    if((m=line.match(/^(Apu|Nyiko|Power|Natkat)\s+(\d+)$/i))){addSpecial(m[1].toLowerCase(),Number(m[2]));continue;}
+    if((m=line.match(/^(\d{1,2})\s*(PP|TO|BO|BK)\s*-?\s*(\d+)$/i))){
+      const digit=Number(m[1]), kind=m[2].toUpperCase(); amount=Number(m[3]);
+      if(digit>9){errors.push('PP / TO / BO / BR တွင် 0 မှ 9 အထိ digit သာသုံးပါ: '+line);continue;}
+      if(kind==='PP'){for(let i=0;i<10;i++){add(digit*10+i,amount);add(i*10+digit,amount)}}
+      else if(kind==='TO'){for(let i=0;i<10;i++)add(digit*10+i,amount)}
+      else if(kind==='BO'){for(let i=0;i<10;i++)add(i*10+digit,amount)}
+      else brotherSets[digit].forEach(n=>add(n,amount));
+      continue;
+    }
+    // Slash-separated numbers with dash amount, e.g. 11/22/33-1000 (no reverse)
+    if((m=line.match(/^([\d/]+)\s*-\s*(\d+)$/))){
+      amount=Number(m[2]);nums=m[1].split('/');
+      if(nums.some(n=>!/^[0-9]{1,2}$/.test(n)||Number(n)>99)||amount<=0){errors.push('ဂဏန်း သို့မဟုတ် ငွေပမာဏ မမှန်ပါ: '+line);continue;}
+      nums.forEach(n=>add(Number(n),amount));continue;
+    }
+    // Single number with dash amount, e.g. 00-5000 means number 00 gets 5000
+    if((m=line.match(/^(\d{1,2})\s*-\s*(\d+)$/))){
+      const num=Number(m[1]), amt=Number(m[2]);
+      if(num<=99 && amt>0){add(num,amt);} else {errors.push('ဂဏန်း သို့မဟုတ် ငွေပမာဏ မမှန်ပါ: '+line);}
+      continue;
+    }
+    // slash-separated numbers with R: add each number and its reverse
+    if((m=line.match(/^([\d/]+)\s*-?\s*R\s*(\d+)$/i))){
+      amount=Number(m[2]); nums=m[1].split('/');
+      if(nums.some(n=>!/^\d{1,2}$/.test(n)||Number(n)>99)){errors.push('ဂဏန်း format မမှန်ပါ: '+line);continue;}
+      nums.forEach(n=>{const v=Number(n);add(v,amount);add(Number(String(v).padStart(2,'0').split('').reverse().join('')),amount)});continue;
+    }
+    // slash-separated numbers without R: no reverse
+    if((m=line.match(/^([\d/]+)\s+(\d+)$/))){
+      amount=Number(m[2]);nums=m[1].split('/');
+      if(nums.some(n=>!/^\d{1,2}$/.test(n)||Number(n)>99)){errors.push('ဂဏန်း format မမှန်ပါ: '+line);continue;}
+      nums.forEach(n=>add(Number(n),amount));continue;
+    }
+    // equals-separated amount, e.g. 12/21=1000
+    if((m=line.match(/^([\d/]+)\s*=\s*(\d+)$/))){
+      amount=Number(m[2]);nums=m[1].split('/');
+      if(nums.some(n=>!/^\d{1,2}$/.test(n)||Number(n)>99)){errors.push('ဂဏန်း format မမှန်ပါ: '+line);continue;}
+      nums.forEach(n=>add(Number(n),amount));continue;
+    }
+    errors.push('Format မမှန်ပါ: '+line);
+  }
+  // Match merge_bets behavior: repeated occurrences of the same number are combined.
+  const merged=new Map();
+  bets.forEach(x=>merged.set(x.num,(merged.get(x.num)||0)+x.amount));
+  return {result:[...merged].map(([num,amount])=>({num,amount})),errors};
+}
+function previewFormat(){
+  let raw=document.getElementById('formatInput').value.trim(),parsed=parseFormat(raw),root=document.getElementById('formatPreview');
+  const blocked=new Set((db.blockedNumbers||[]).map(n=>String(n).padStart(2,'0')));
+  const rejected=parsed.result.filter(x=>blocked.has(String(x.num).padStart(2,'0')));
+  parsedRows=parsed.result.filter(x=>!blocked.has(String(x.num).padStart(2,'0')));
+  const rejectedTotal=rejected.reduce((sum,x)=>sum+Number(x.amount||0),0);
+  if(!parsed.result.length){root.innerHTML='<div class="error">'+(parsed.errors.map(esc).join('<br>')||'Format ထည့်ပါ')+'</div>';return}
+  if(!parsedRows.length){root.innerHTML=`<div class="preview"><div class="error">ထည့်ထားသော ဂဏန်းအားလုံးသည် မရဂဏန်းဖြစ်နေပါသည်။ သိမ်း၍မရပါ။</div><div>မရဂဏန်းကြောင့် ပယ်ငွေ — <b>${fmt(rejectedTotal)} ကျပ်</b></div></div>`;return}
+  root.innerHTML=`<div class="preview"><b>ထည့်သွင်းမည့်စာရင်း</b><table><thead><tr><th>ဂဏန်း</th><th>ငွေပမာဏ</th></tr></thead><tbody>${parsedRows.map(x=>`<tr><td><b>${x.num}</b></td><td>${fmt(x.amount)} ကျပ်</td></tr>`).join('')}</tbody></table><div class="total"><span>သိမ်းမည့် ${parsedRows.length} ကွက် စုစုပေါင်း</span><strong>${fmt(sumEntries(parsedRows))} ကျပ်</strong></div><div class="hint" style="margin-top:10px">မရဂဏန်းအဖြစ် အလိုအလျောက်ပယ်ထားသော ${rejected.length} ကွက် — <b>${fmt(rejectedTotal)} ကျပ်</b><br>ပယ်ထားသော ဂဏန်း: ${rejected.map(x=>x.num+'='+fmt(x.amount)).join(', ')||'မရှိပါ'}</div>${parsed.errors.length?'<div class="error">'+parsed.errors.map(esc).join('<br>')+'</div>':''}</div><button class="btn" style="width:100%" onclick="saveFormat()">အတည်ပြုပြီး ဘောင်ချာသိမ်းမယ်</button>`;
+}
+function addManualRow(num='',amount=''){let root=document.getElementById('manualRows'),id='r'+Date.now()+Math.random().toString(16).slice(2);root.insertAdjacentHTML('beforeend',`<div class="formrow" id="${id}" style="align-items:end"><div class="field"><label>ဂဏန်း (00–99)</label><input class="mnum" maxlength="2" inputmode="numeric" placeholder="12" value="${num}" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,2);updateManualTotal()"></div><div class="field"><label>ငွေပမာဏ</label><input class="mamount" type="number" min="1" inputmode="numeric" placeholder="1000" value="${amount}" oninput="updateManualTotal()"></div><button class="btn danger small" style="margin-bottom:11px" onclick="document.getElementById('${id}').remove();updateManualTotal()">ဖျက်</button></div>`);updateManualTotal()}
+function manualData(){return [...document.querySelectorAll('#manualRows .formrow')].map(r=>({num:r.querySelector('.mnum').value.trim(),amount:Number(r.querySelector('.mamount').value)})).filter(x=>x.num||x.amount)}
+function updateManualTotal(){let rows=manualData();let total=rows.reduce((s,x)=>s+(x.amount||0),0);document.getElementById('manualTotal').innerHTML=`<span>စုစုပေါင်း</span><strong>${fmt(total)} ကျပ်</strong>`}
+function saveManual(){let rows=manualData();if(!rows.length||rows.some(x=>!/^\d{1,2}$/.test(x.num)||Number(x.num)>99||!Number.isFinite(x.amount)||x.amount<=0)){toast('ဂဏန်းနဲ့ ငွေပမာဏ အားလုံးမှန်ကန်စွာထည့်ပါ');return}rows=rows.map(x=>({num:x.num.padStart(2,'0'),amount:x.amount}));const blocked=new Set((db.blockedNumbers||[]).map(n=>String(n).padStart(2,'0'))),bad=rows.filter(x=>blocked.has(x.num));if(bad.length){toast('မရဂဏန်းဖြစ်နေပါသည်: '+bad.map(x=>x.num).join(', '));return}saveEntry(rows,'manual')}
+function saveFormat(){if(!parsedRows.length){toast('အရင်စာရင်းတွက်ကြည့်ပါ');return}saveEntry(parsedRows,'format')}
+function saveEntry(lines,mode){let id='V'+Date.now().toString().slice(-8);db.entries.push({id,voucher:id,userId:currentUserId,mode,lines:lines.map(x=>({...x})),date:new Date().toLocaleDateString('en-CA'),created:new Date().toISOString()});save();closeModal();render();toast('ဘောင်ချာ '+id+' သိမ်းပြီးပါပြီ')}
+function viewUser(id){let es=db.entries.filter(e=>e.userId===id).sort((a,b)=>b.created.localeCompare(a.created));modal(`<div class="close-row"><div><h3>${esc(userName(id))} — တစ်ယောက်ချင်းစာရင်း</h3><div class="sub">စုစုပေါင်းတင်ငွေ ${fmt(sumEntries(es.flatMap(e=>e.lines)))} ကျပ် · Commission ${fmt(db.users.find(u=>u.id===id)?.commissionPercent||0)}% · The Odd ${fmt(db.users.find(u=>u.id===id)?.odd||80)}x</div></div><button class="close" onclick="closeModal()">×</button></div><h4 style="margin:8px 0">ဘောင်ချာတစ်ခုချင်း ပြင်နိုင်သော စာရင်း</h4>${entryTable(es)}`) }
+function deleteEntry(id){const e=db.entries.find(x=>x.id===id);if(!e)return;modal(`<div class="close-row"><div><h3>ဘောင်ချာကို ဖျက်ရန်</h3><div class="sub">ဘောင်ချာ ${esc(e.voucher)} ကို ဖျက်မှာ သေချာပါသလား။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="formrow" style="justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">မဖျက်တော့ပါ</button><button class="btn danger" onclick="confirmDeleteEntry('${id}')">ဘောင်ချာဖျက်မည်</button></div>`)}
+function confirmDeleteEntry(id){const e=db.entries.find(x=>x.id===id);if(!e)return;const uid=e.userId;db.entries=db.entries.filter(x=>x.id!==id);save();closeModal();render();viewUser(uid);toast('ဘောင်ချာကို ဖျက်ပြီးပါပြီ')}
+function openSettlement(id){let today=new Date().toLocaleDateString('en-CA');modal(`<div class="close-row"><div><h3>${esc(userName(id))} — စာရင်းတွက်ချက်ခြင်း</h3><div class="sub">နေ့စွဲရွေးပါ။ ထွက်ဂဏန်းနှင့် မနက်/ညနေကို အလိုအလျောက်ယူပါမည်။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="preview"><div class="field"><label>နေ့စွဲ</label><input id="settleDate" type="date" value="${today}" onchange="calculateUserSettlement('${id}')"></div><div id="settlementResult"></div></div>`);calculateUserSettlement(id)}
+function editEntry(id){let e=db.entries.find(x=>x.id===id);if(!e)return;let rows=e.lines.map((x,i)=>`<div class="formrow edit-line" data-index="${i}" style="align-items:end"><div class="field"><label>ဂဏန်း (00–99)</label><input class="edit-num" maxlength="2" inputmode="numeric" value="${esc(String(x.num).padStart(2,'0'))}"></div><div class="field"><label>ငွေပမာဏ</label><input class="edit-amount" type="number" min="1" value="${Number(x.amount)}"></div><button class="btn danger small" style="margin-bottom:11px" onclick="this.parentElement.remove()">ဖျက်</button></div>`).join('');modal(`<div class="close-row"><div><h3>${esc(e.voucher)} — စာရင်းပြင်ရန်</h3><div class="sub">${esc(userName(e.userId))} · ${esc(e.date)}</div></div><button class="close" onclick="closeModal()">×</button></div><div id="editLines">${rows}</div><button class="btn secondary" onclick="addEditLine()">＋ ဂဏန်းတစ်ကွက်ထပ်ထည့်</button><button class="btn" style="width:100%;margin-top:12px" onclick="saveEditedEntry('${id}')">ပြင်ဆင်ချက် သိမ်းမယ်</button>`)}
+function addEditLine(num='',amount=''){let root=document.getElementById('editLines');root.insertAdjacentHTML('beforeend',`<div class="formrow edit-line" style="align-items:end"><div class="field"><label>ဂဏန်း (00–99)</label><input class="edit-num" maxlength="2" inputmode="numeric" value="${num}"></div><div class="field"><label>ငွေပမာဏ</label><input class="edit-amount" type="number" min="1" value="${amount}"></div><button class="btn danger small" style="margin-bottom:11px" onclick="this.parentElement.remove()">ဖျက်</button></div>`)}
+function saveEditedEntry(id){let e=db.entries.find(x=>x.id===id);if(!e)return;let lines=[...document.querySelectorAll('#editLines .edit-line')].map(r=>({num:r.querySelector('.edit-num').value.trim(),amount:Number(r.querySelector('.edit-amount').value)}));if(!lines.length||lines.some(x=>!/^\d{1,2}$/.test(x.num)||Number(x.num)>99||!Number.isFinite(x.amount)||x.amount<=0)){toast('ဂဏန်းနဲ့ ငွေပမာဏ မှန်ကန်စွာထည့်ပါ');return}e.lines=lines.map(x=>({num:x.num.padStart(2,'0'),amount:x.amount}));save();let uid=e.userId;toast('စာရင်းပြင်ဆင်ပြီးပါပြီ');viewUser(uid);render()}
+function calculateUserSettlement(id){let date=document.getElementById('settleDate')?.value;if(!date)return;let user=db.users.find(u=>u.id===id),draw=db.drawResults.find(x=>x.date===date)||{},winning=draw.number||draw.morning||draw.evening||'',session=draw.session||(draw.morning?'morning':draw.evening?'evening':''),dayEntries=db.entries.filter(e=>e.userId===id&&e.date===date),lines=dayEntries.flatMap(e=>e.lines||[]),total=lines.reduce((s,x)=>s+Number(x.amount||0),0),winAmount=winning?lines.filter(x=>String(x.num).padStart(2,'0')===winning).reduce((s,x)=>s+Number(x.amount||0),0):0,odd=Number(user?.odd??80),commission=total*Number(user?.commissionPercent||0)/100,payout=winAmount*odd,payment=Number(user?.payment||0),net=total-payout-commission-payment,root=document.getElementById('settlementResult');if(!root)return;if(!winning){root.innerHTML=`<div style="margin-top:12px;padding:14px;border-radius:10px;background:var(--soft);font-weight:700;color:var(--muted)">ထွက်ဂဏန်း မရှိသေးပါ။ ထွက်ဂဏန်းထည့်ပြီးမှ စာရင်းတွက်ချက်မှု ရလဒ်ကို ပြသပါမည်။</div><div style="font-size:13px;line-height:1.9;margin-top:10px"><div>နေ့စွဲအတွင်း စုစုပေါင်းထိုးငွေ: <b>${fmt(total)} ကျပ်</b></div><div>ပေးငွေ: <b>${fmt(payment)} ကျပ်</b></div></div>`;return}let sign=net>=0?'+':'−',meaning=net>=0?`${user?.name||'User'} ဆီမှ ${fmt(Math.abs(net))} ကျပ် ရရန်`:`${user?.name||'User'} ကို ${fmt(Math.abs(net))} ကျပ် ပေးရန်`;root.innerHTML=`<div style="margin-top:10px;font-size:13px;line-height:1.9"><div>အချိန်: <b>${session==='morning'?'မနက်':session==='evening'?'ညနေ':'မသတ်မှတ်ရသေးပါ'}</b></div><div>ထွက်ဂဏန်း: <b>${esc(winning)}</b></div><div>နေ့စွဲအတွင်း စုစုပေါင်းထိုးငွေ: <b>${fmt(total)} ကျပ်</b></div><div>ပေါက်ဂဏန်းဖိုး: <b>${fmt(winAmount)} ကျပ်</b> × Odd ${fmt(odd)} = <b>${fmt(payout)} ကျပ်</b></div><div>Commission: ${fmt(total)} × ${fmt(user?.commissionPercent||0)}% = <b>${fmt(commission)} ကျပ်</b></div><div>ပေးငွေ: <b>${fmt(payment)} ကျပ်</b></div><div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;font-size:17px;font-weight:800;color:${net>=0?'var(--green)':'var(--red)'}">${sign} ${meaning}</div><div class="sub">တွက်ချက်မှု: စုစုပေါင်းတင်ငွေ − (ပေါက်ငွေ × Odd) − Commission − ပေးငွေ</div></div>`}
+function openAddUser(){modal(`<div class="close-row"><h3>Commission User အသစ်</h3><button class="close" onclick="closeModal()">×</button></div><div class="field"><label>အမည်</label><input id="userNameInput" placeholder="User အမည်"></div><div class="field"><label>Username</label><input id="usernameInput" placeholder="username"></div><div class="formrow"><div class="field"><label>Commission ရာခိုင်နှုန်း (%)</label><input id="commissionInput" type="number" min="0" max="100" step="0.01" value="10" placeholder="ဥပမာ 10 သို့မဟုတ် 20"></div><div class="field"><label>The Odd (ဥပမာ 80x)</label><input id="oddInput" type="number" min="0" step="0.01" value="80" placeholder="80"></div></div><div class="field"><label>ပေးငွေ (Optional)</label><input id="userPaymentInput" type="number" min="0" step="1" placeholder="မဖြည့်လည်းရပါသည်"></div><div class="hint">ဥပမာ — Commission 10% / 20%၊ The Odd 80x။ ပေးငွေကို မဖြည့်ဘဲလည်း User ဖန်တီးနိုင်ပါသည်။</div><button class="btn" style="width:100%" onclick="addUser()">User ဖန်တီးမယ်</button>`)}
+function addUser(){let name=document.getElementById('userNameInput').value.trim(),username=document.getElementById('usernameInput').value.trim(),commissionPercent=Number(document.getElementById('commissionInput').value),odd=Number(document.getElementById('oddInput').value),paymentRaw=document.getElementById('userPaymentInput').value.trim(),payment=paymentRaw===''?null:Number(paymentRaw);if(!name||!username){toast('အမည်နဲ့ Username ဖြည့်ပါ');return}if(!Number.isFinite(commissionPercent)||commissionPercent<0||commissionPercent>100){toast('Commission ကို 0 မှ 100% အတွင်း ထည့်ပါ');return}if(!Number.isFinite(odd)||odd<0){toast('The Odd ကို မှန်ကန်စွာထည့်ပါ');return}if(paymentRaw!==''&&(!Number.isFinite(payment)||payment<0)){toast('ပေးငွေကို မှန်ကန်စွာထည့်ပါ');return}if(db.users.some(u=>u.username===username)){toast('Username ရှိပြီးသားပါ');return}db.users.push({id:'u'+Date.now(),name,username,commissionPercent,odd,payment});save();closeModal();render();toast('User အသစ်ထည့်ပြီးပါပြီ')}
+function parseBlockedNumbers(raw){const out=new Set();String(raw||'').split(/[\s,;\/]+/).filter(Boolean).forEach(x=>{if(/^\d{1,2}$/.test(x)&&Number(x)<=99)out.add(x.padStart(2,'0'))});return [...out].sort((a,b)=>Number(a)-Number(b))}
+function editUser(id){const u=db.users.find(x=>x.id===id);if(!u)return;modal(`<div class="close-row"><div><h3>Commission User ပြင်ရန်</h3><div class="sub">${esc(u.name)} ၏ အချက်အလက်များ</div></div><button class="close" onclick="closeModal()">×</button></div><div class="field"><label>အမည်</label><input id="editUserName" value="${esc(u.name)}"></div><div class="field"><label>Username</label><input id="editUsername" value="${esc(u.username)}"></div><div class="formrow"><div class="field"><label>Commission ရာခိုင်နှုန်း (%)</label><input id="editCommission" type="number" min="0" max="100" step="0.01" value="${Number(u.commissionPercent||0)}"></div><div class="field"><label>The Odd (ဥပမာ 80x)</label><input id="editOdd" type="number" min="0" step="0.01" value="${Number(u.odd??80)}"></div></div><div class="field"><label>ပေးငွေ (Optional)</label><input id="editUserPayment" type="number" min="0" step="1" value="${u.payment==null?'':Number(u.payment)}" placeholder="မဖြည့်လည်းရပါသည်"></div><div class="hint">မရဂဏန်းကို User တစ်ယောက်ချင်းစီမှာ မသတ်မှတ်တော့ဘဲ အားလုံးအတွက် သီးသန့် မရဂဏန်းနေရာမှသာ သတ်မှတ်ပါမည်။</div><button class="btn" style="width:100%" onclick="saveEditedUser('${id}')">ပြင်ဆင်ချက် သိမ်းမယ်</button>`)}
+function saveEditedUser(id){const u=db.users.find(x=>x.id===id);if(!u)return;const name=document.getElementById('editUserName').value.trim(),username=document.getElementById('editUsername').value.trim(),commissionPercent=Number(document.getElementById('editCommission').value),odd=Number(document.getElementById('editOdd').value),paymentRaw=document.getElementById('editUserPayment').value.trim(),payment=paymentRaw===''?null:Number(paymentRaw);if(!name||!username){toast('အမည်နဲ့ Username ဖြည့်ပါ');return}if(db.users.some(x=>x.id!==id&&x.username===username)){toast('Username ရှိပြီးသားပါ');return}if(!Number.isFinite(commissionPercent)||commissionPercent<0||commissionPercent>100||!Number.isFinite(odd)||odd<0){toast('Commission သို့မဟုတ် Odd မှားနေပါသည်');return}if(paymentRaw!==''&&(!Number.isFinite(payment)||payment<0)){toast('ပေးငွေကို မှန်ကန်စွာထည့်ပါ');return}Object.assign(u,{name,username,commissionPercent,odd,payment});save();closeModal();render();toast('User အချက်အလက် ပြင်ပြီးပါပြီ')}
+function deleteUser(id){const u=db.users.find(x=>x.id===id);if(!u)return;modal(`<div class="close-row"><div><h3>Commission User ဖျက်ရန်</h3><div class="sub">${esc(u.name)} ကို ဖျက်မည်။ ယခင်ဘောင်ချာများကို မဖျက်ဘဲ မှတ်တမ်းအဖြစ် ထားရှိမည်။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="formrow" style="justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">မဖျက်တော့ပါ</button><button class="btn danger" onclick="confirmDeleteUser('${id}')">ဖျက်မည်</button></div>`)}
+function confirmDeleteUser(id){db.users=db.users.filter(x=>x.id!==id);save();closeModal();render();toast('Commission User ဖျက်ပြီးပါပြီ')}
+function openGlobalBlocked(){modal(`<div class="close-row"><div><h3>မရဂဏန်း သတ်မှတ်ရန်</h3><div class="sub">ဒီနေရာမှာ သတ်မှတ်ထားတဲ့ မရဂဏန်းတွေကို User အားလုံးအတွက် အသုံးပြုပါမည်။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="field"><label>မရဂဏန်း (ကော်မာဖြင့်ခွဲပါ၊ 00 မှ 99)</label><input id="globalBlockedInput" value="${esc((db.blockedNumbers||[]).join(','))}" placeholder="ဥပမာ 12,34,56"></div><div class="hint">Format နဲ့ထိုးခြင်းနှင့် တစ်လုံးချင်းထိုးခြင်း နှစ်မျိုးလုံးတွင် ပိတ်ထားသောဂဏန်းများကို ထိုးမရပါ။</div><button class="btn" style="width:100%" onclick="saveGlobalBlocked()">မရဂဏန်း သိမ်းမယ်</button>`)}
+function saveGlobalBlocked(){const raw=document.getElementById('globalBlockedInput').value,nums=parseBlockedNumbers(raw);if(raw.trim()&&nums.length===0){toast('မရဂဏန်းကို 00 မှ 99 အတွင်း မှန်ကန်စွာထည့်ပါ');return}db.blockedNumbers=nums;save();closeModal();render();toast('User အားလုံးအတွက် မရဂဏန်း သိမ်းပြီးပါပြီ')}
+function renderHistory(){
+ const root=document.getElementById('historyPanel');if(!root)return;
+ const rows=[...(db.finalizedRecords||[])].sort((a,b)=>(b.date+b.session).localeCompare(a.date+a.session));
+ root.innerHTML=`<div class="panel-head"><div><h3>အပြီးစာရင်းချုပ် မှတ်တမ်းများ</h3><div class="sub">ထွက်ဂဏန်းသိမ်းပြီး အပြီးစာရင်းချုပ်ထားသော မှတ်တမ်းများ</div></div></div>`+
+ (rows.length?`<div class="table-wrap"><table><thead><tr><th>ရက်စွဲ</th><th>ထွက်ဂဏန်းအချိန်</th><th>ထွက်ဂဏန်း</th><th>User</th><th>စုစုပေါင်းတင်ငွေ</th><th>ပေါက်ဂဏန်းဖိုး</th><th>Commission ရငွေ</th><th>ပေးငွေ</th><th>စုစုပေါင်းငွေ</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.date)}</td><td>${r.session==='morning'?'မနက်':'ညနေ'}</td><td><b>${esc(r.number)}</b></td><td>${esc(r.userName)}</td><td>${fmt(r.total||0)} ကျပ်</td><td>${fmt(r.payout)} ကျပ် <small>(${fmt(r.winAmount)} × ${fmt(r.odd)})</small></td><td>${fmt(r.commission)} ကျပ်</td><td>${fmt(r.payment||0)} ကျပ်</td><td class="money">${fmt(r.net)} ကျပ်</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">မှတ်တမ်းမရှိသေးပါ။ ထွက်ဂဏန်းထည့်ပြီး အပြီးစာရင်းချုပ်ပါ။</div>');
+}
+function openFinalizeConfirm(){
+ const draw=[...(db.drawResults||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
+ if(!draw||!draw.number){modal(`<div class="close-row"><h3>အပြီးစာရင်းချုပ်မည်</h3><button class="close" onclick="closeModal()">×</button></div><div class="error" style="padding:14px">ထွက်ဂဏန်း မရှိသေးပါ။ အရင်ဆုံး ထွက်ဂဏန်းထည့်ပါ။</div><div class="formrow" style="justify-content:flex-end"><button class="btn" onclick="closeModal()">OK</button></div>`);return}
+ const already=(db.finalizedRecords||[]).some(r=>r.date===draw.date&&r.number===draw.number);
+ if(already){toast('ဒီထွက်ဂဏန်းအတွက် အပြီးစာရင်းချုပ်ပြီးသားပါ');return}
+ modal(`<div class="close-row"><div><h3>အပြီးစာရင်းချုပ်ရန်</h3><div class="sub">${esc(draw.date)} · ${draw.session==='morning'?'မနက်':'ညနေ'} · ထွက်ဂဏန်း ${esc(draw.number)}</div></div><button class="close" onclick="closeModal()">×</button></div><div class="hint">Commission User အားလုံး၏ တင်ငွေ၊ ပေါက်ဂဏန်းဖိုး (ပေါက်ဂဏန်းတင်ဖိုး × The Odd)၊ Commission၊ ပေးငွေနှင့် ပေးငွေနုတ်ပြီးနောက် စုစုပေါင်းငွေတို့ကို မှတ်တမ်းများထဲ သိမ်းပါမည်။</div><p style="font-weight:700">စာရင်းချုပ်မှာ သေချာပါသလား။</p><div class="formrow" style="justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">မလုပ်တော့ပါ</button><button class="btn" onclick="confirmFinalize('${draw.date}','${draw.number}')">OK</button></div>`);
+}
+function confirmFinalize(date,number){
+ const draw=db.drawResults.find(x=>x.date===date&&x.number===number);if(!draw){toast('ထွက်ဂဏန်း မတွေ့ပါ');closeModal();return}
+ db.finalizedRecords=db.finalizedRecords||[];
+ if(db.finalizedRecords.some(r=>r.date===date&&r.number===number)){toast('ဒီရက်အတွက် စာရင်းချုပ်ပြီးသားပါ');closeModal();return}
+ db.users.forEach(user=>{
+  const lines=db.entries.filter(e=>e.userId===user.id&&e.date===date).flatMap(e=>e.lines||[]);
+  const total=lines.reduce((a,x)=>a+Number(x.amount||0),0);
+  const winAmount=lines.filter(x=>String(x.num).padStart(2,'0')===number).reduce((a,x)=>a+Number(x.amount||0),0);
+  const odd=Number(user.odd??80),payout=winAmount*odd,commission=total*Number(user.commissionPercent||0)/100,payment=Number(user.payment||0),net=total-payout-commission-payment;
+  db.finalizedRecords.push({id:'f'+Date.now()+Math.random().toString(36).slice(2,7),date,session:draw.session||'evening',number,userId:user.id,userName:user.name,total,winAmount,odd,payout,commission,payment,net,created:new Date().toISOString()});
+  // မှတ်တမ်းထဲ ပေးငွေကို သိမ်းပြီးနောက် နောက်စာရင်းအတွက် User ၏ ပေးငွေကို reset လုပ်ပါ
+  user.payment=null;
+ });
+ // အပြီးစာရင်းချုပ်ပြီးသောနေ့၏ ဘောင်ချာများကို တင်စာရင်းအားလုံးမှ ဖယ်ရှားပါ
+ db.entries=db.entries.filter(e=>e.date!==date);
+ save();closeModal();render();showTab('history');toast('အပြီးစာရင်းချုပ်ပြီး ဘောင်ချာများကို တင်စာရင်းမှ ရှင်းလင်းပြီးပါပြီ');
+}
+function openDrawResults(){let today=new Date().toLocaleDateString('en-CA'),existing=db.drawResults.find(x=>x.date===today)||{};let history=[...db.drawResults].sort((a,b)=>b.date.localeCompare(a.date));let val=existing.number||existing.morning||existing.evening||'';modal(`<div class="close-row"><div><h3>ထွက်ဂဏန်း</h3><div class="sub">နေ့စွဲတစ်ရက်လျှင် ထွက်ဂဏန်းတစ်ခုသာ ထည့်ပါမည်။ ၁:၀၀ PM မတိုင်မီ မနက်၊ ၁:၀၀ PM မှစ၍ ညနေဟု အလိုအလျောက် သတ်မှတ်ပါမည်။</div></div><button class="close" onclick="closeModal()">×</button></div><div class="field"><label>နေ့စွဲ</label><input id="drawDate" type="date" value="${today}" onchange="loadDrawDate()"></div><div class="field"><label>ထွက်ဂဏန်း (00–99)</label><input id="drawNumber" inputmode="numeric" maxlength="2" placeholder="00–99" value="${esc(val)}" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,2)"></div><div class="hint" id="drawSessionHint">${existing.session==='morning'||existing.morning?'မနက်':existing.session==='evening'||existing.evening?'ညနေ':'သိမ်းချိန်အလိုက် မနက်/ညနေ သတ်မှတ်ပါမည်'}</div><button class="btn" style="width:100%" onclick="saveDrawResults()">ထွက်ဂဏန်း သိမ်းမယ်</button><div class="preview" style="margin-top:16px"><b>သိမ်းထားသော ထွက်ဂဏန်းများ</b>${history.length?`<div class="table-wrap"><table style="min-width:0"><thead><tr><th>နေ့စွဲ</th><th>အချိန်</th><th>ထွက်ဂဏန်း</th></tr></thead><tbody>${history.map(x=>`<tr><td>${esc(x.date)}</td><td><b>${x.session==='morning'||x.morning?'မနက်':x.session==='evening'||x.evening?'ညနေ':'—'}</b></td><td><b>${esc(x.number||x.morning||x.evening||'—')}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">ရလဒ်မရှိသေးပါ</div>'}</div>`)}
+function loadDrawDate(){let d=document.getElementById('drawDate').value,x=db.drawResults.find(r=>r.date===d)||{};document.getElementById('drawNumber').value=x.number||x.morning||x.evening||'';document.getElementById('drawSessionHint').textContent=x.session==='morning'||x.morning?'မနက်':x.session==='evening'||x.evening?'ညနေ':'သိမ်းချိန်အလိုက် မနက်/ညနေ သတ်မှတ်ပါမည်'}
+function saveDrawResults(){let date=document.getElementById('drawDate').value,number=document.getElementById('drawNumber').value.trim();if(!date||!/^\d{2}$/.test(number)){toast('နေ့စွဲနဲ့ ထွက်ဂဏန်းကို 00 မှ 99 အထိ ၂ လုံးထည့်ပါ');return}const now=new Date(),session=(now.getHours()*60+now.getMinutes())<13*60?'morning':'evening';let item=db.drawResults.find(x=>x.date===date);if(item){item.number=number;item.session=session;delete item.morning;delete item.evening}else db.drawResults.push({date,number,session,enteredAt:now.toISOString()});save();toast('ထွက်ဂဏန်း သိမ်းပြီးပါပြီ ('+(session==='morning'?'မနက်':'ညနေ')+')');openDrawResultsForDate(date)}
+function openDrawResultsForDate(date){openDrawResults();document.getElementById('drawDate').value=date;loadDrawDate()}
+function modal(content){document.getElementById('modalRoot').innerHTML=`<div class="modal-back" onclick="if(event.target===this)closeModal()"><div class="modal">${content}</div></div>`}
+function closeModal(){document.getElementById('modalRoot').innerHTML=''}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+render();showTab('users');
+</script>
+</body></html>

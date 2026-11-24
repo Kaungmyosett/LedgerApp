@@ -1,0 +1,8 @@
+# Client app icon (Android flavor "client"). Regenerate: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false # iOS has no flavors yet; its single AppIcon is the client icon (see README)
+  image_path: "assets/icon/client.png"
+  adaptive_icon_background: "#12195E"
+  adaptive_icon_foreground: "assets/icon/client_foreground.png"
+  min_sdk_android: 21

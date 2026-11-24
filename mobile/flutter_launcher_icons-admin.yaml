@@ -1,0 +1,8 @@
+# Admin app icon (Android flavor "admin"). Regenerate: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/admin.png"
+  adaptive_icon_background: "#1A2328"
+  adaptive_icon_foreground: "assets/icon/admin_foreground.png"
+  min_sdk_android: 21
