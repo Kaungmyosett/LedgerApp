@@ -6,7 +6,7 @@ This is the first backend/database foundation for the existing 2D Ledger.
 - One owner-operated Admin account manages many Clients.
 - Android and iPhone are the target platforms (Flutter client planned).
 - Admin creates Client accounts; there is no public registration.
-- Admin login: phone + password.
+<!-- - Admin login: phone + password. -->
 - Client login: email + a one-time code issued by the Admin (clients have no password). One phone per client.
 - Each client owns a private ledger (see `docs/LEDGER_SPEC.md`).
 - Ledger entries can be saved offline as drafts and synchronized when connectivity returns.
@@ -64,5 +64,5 @@ Verified in the build sandbox: the ledger rules (TypeScript) against the real HT
 Next: real-device testing, backups/deploy, and anything you find while using it.
 
 
-## For test ngrok server
-ngrok http 3000 --url=unchary-stational-mildred.ngrok-free.dev
+<!-- ## For test ngrok server
+ngrok http 3000 --url=unchary-stational-mildred.ngrok-free.dev -->
