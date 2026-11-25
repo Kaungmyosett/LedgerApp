@@ -2,6 +2,8 @@
 // The server applies them idempotently (same opId twice = applied once), so retrying is always safe.
 import 'dart:math';
 
+import 'draw_period.dart';
+import 'history_allocations.dart';
 import 'logic.dart';
 import 'models.dart';
 
@@ -18,10 +20,7 @@ String newUuid() {
 /// Voucher code shown on the phone: V######## (bets) or C######## (cover). The server keeps it unless already used.
 String newVoucherCode(String prefix) => prefix + (10000000 + _rng.nextInt(90000000)).toString();
 
-String today() {
-  final n = DateTime.now();
-  return '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-}
+String today() => ledgerDate(DateTime.now());
 
 /// A queued operation is just JSON, so it survives app restarts exactly as sent.
 typedef Op = Map<String, dynamic>;
@@ -39,9 +38,13 @@ abstract class Ops {
   static Op blockedSet(List<String> numbers) => _op('blocked.set', {'numbers': numbers});
   static Op drawSave(String date, String session, String number) => _op('draw.save', {'date': date, 'session': session, 'number': number});
   static Op drawDelete(String date, String session) => _op('draw.delete', {'date': date, 'session': session});
-  static Op coverCreate(String id, String code, double requested, String date) => _op('cover.create', {'id': id, 'code': code, 'requestedAmount': requested, 'date': date});
+  static Op coverCreate(String id, String code, double requested, String date) =>
+      _op('cover.create', {'id': id, 'code': code, 'requestedAmount': requested, 'date': date,
+        'createdAt': DateTime.now().toUtc().toIso8601String()});
   static Op coverDelete(String id) => _op('cover.delete', {'id': id});
   static Op finalize(String date, String session, Map<String, String> recordIds) => _op('finalize', {'date': date, 'session': session, 'recordIds': recordIds});
+  static Op debtRecord(String userId, String date, String kind, double amount) =>
+      _op('debt.record', {'id': newUuid(), 'userId': userId, 'date': date, 'kind': kind, 'amount': amount});
   static Op finalizedDelete(String id) => _op('finalized.delete', {'id': id});
 }
 
@@ -107,7 +110,8 @@ void applyOpLocally(LedgerData d, Op op) {
       final seq = d.coverVouchers.fold<int>(0, (m, v) => v.seq > m ? v.seq : m) + 1;
       d.coverVouchers.add(LCover(
         id: op['id'] as String, code: (op['code'] ?? '') as String, seq: seq, requestedAmount: (op['requestedAmount'] as num).toDouble(),
-        coverListTotal: r.remainingTotal, date: op['date'] as String, createdAt: DateTime.now().toUtc().toIso8601String(),
+        coverListTotal: r.remainingTotal, date: op['date'] as String,
+        createdAt: (op['createdAt'] as String?) ?? DateTime.now().toUtc().toIso8601String(),
         allocations: r.allocations, remainingLines: r.remainingLines));
     case 'cover.delete':
       d.coverVouchers.removeWhere((v) => v.id == op['id']);
@@ -118,6 +122,11 @@ void applyOpLocally(LedgerData d, Op op) {
       if (d.finalizedRecords.any((r) => r.date == date && r.session == session)) throw LedgerRule('ALREADY_FINALIZED', 'This draw is already finalized.');
       final ids = Map<String, dynamic>.from((op['recordIds'] ?? const {}) as Map);
       final dayEntries = d.entries.where((e) => e.date == date).toList();
+      final userIds = d.users.map((user) => user.id).toSet();
+      final shares = historyAllocations(
+        dayEntries.where((entry) => userIds.contains(entry.userId)),
+        d.coverVouchers,
+      );
       final settled = <String>{};
       final records = <LFinal>[];
       for (final u in d.users) {
@@ -128,13 +137,46 @@ void applyOpLocally(LedgerData d, Op op) {
         records.add(LFinal(
           id: (ids[u.id] as String?) ?? newUuid(), userId: u.id, userName: u.name, date: date, session: session, number: draw.number,
           total: round2(s.total), winAmount: round2(s.winAmount), odd: s.odd, payout: round2(s.payout), commission: round2(s.commission),
-          payment: round2(s.payment), net: round2(s.net), createdAt: DateTime.now().toUtc().toIso8601String()));
+          payment: round2(s.payment), net: round2(s.net), eaten: shares[u.id]?.eaten ?? 0,
+          covered: shares[u.id]?.covered ?? 0, createdAt: DateTime.now().toUtc().toIso8601String()));
       }
       if (records.isEmpty) throw LedgerRule('NOTHING_TO_FINALIZE', 'No commission user has a stake on this date.');
       d.finalizedRecords.addAll(records);
       d.users = d.users.map((u) => settled.contains(u.id) ? u.copyWith(clearPayment: true) : u).toList();
       d.entries.removeWhere((e) => e.date == date);
       d.coverVouchers.clear(); // finalize closes the cover period (the server keeps them, frozen)
+    case 'debt.record':
+      final id = op['id'] as String;
+      if (d.debtEntries.any((entry) => entry.id == id)) return;
+      final userId = op['userId'] as String;
+      final date = op['date'] as String;
+      final kind = op['kind'] as String;
+      final amount = (op['amount'] as num).toDouble();
+      final user = d.users.where((user) => user.id == userId).firstOrNull;
+      final entries = d.debtEntries.where((entry) => entry.userId == userId);
+      final name = user?.name ?? (kind == 'repayment' ? entries.lastOrNull?.userName : null);
+      if (name == null) throw LedgerRule('USER_NOT_FOUND', 'Commission user not found.');
+      if (!amount.isFinite || amount <= 0 || amount > 1e12) {
+        throw LedgerRule('INVALID_OPERATION', 'Invalid debt amount.');
+      }
+      if (kind == 'repayment') {
+        final days = <String, int>{date: -(amount * 100).round()};
+        for (final entry in entries) {
+          days.update(entry.date, (change) => change + entry.changeCents,
+              ifAbsent: () => entry.changeCents);
+        }
+        var balance = 0;
+        for (final day in days.keys.toList()..sort()) {
+          balance += days[day]!;
+          if (day.compareTo(date) >= 0 && balance < 0) {
+            throw LedgerRule('REPAYMENT_EXCEEDS_DEBT', 'Repayment exceeds the outstanding debt.');
+          }
+        }
+      }
+      d.debtEntries.add(LDebtEntry(
+        id: id, userId: userId, userName: name, date: date, kind: kind,
+        amount: amount, createdAt: DateTime.now().toUtc().toIso8601String(),
+      ));
     case 'finalized.delete':
       d.finalizedRecords.removeWhere((r) => r.id == op['id']);
     default:

@@ -76,6 +76,7 @@ class LedgerStore extends ChangeNotifier {
   String? lastErrorCode; // server error code, e.g. PLAN_EXPIRED
   Timer? _timer;
   bool _disposed = false;
+  Future<void> _saveTail = Future<void>.value();
 
   int get pending => _queue.length;
   bool get hasUnsynced => _queue.isNotEmpty;
@@ -128,8 +129,15 @@ class LedgerStore extends ChangeNotifier {
     _rebuild();
   }
 
+  /// Serialize writes from local operations and sync before replacing the on-disk copy.
+  Future<void> _save() {
+    final write = _saveTail.then((_) => _writeSnapshot(), onError: (Object _, StackTrace __) => _writeSnapshot());
+    _saveTail = write;
+    return write;
+  }
+
   /// Write to a temp file then rename, so a crash mid-write can't leave a half-written ledger.
-  Future<void> _save() async {
+  Future<void> _writeSnapshot() async {
     final tmp = File('${file.path}.tmp');
     await file.parent.create(recursive: true);
     await tmp.writeAsString(jsonEncode({

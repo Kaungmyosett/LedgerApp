@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../i18n/lang.dart';
+import '../../ledger/draw_period.dart';
 import '../../ledger/ledger_store.dart';
 import '../../ledger/logic.dart';
 import '../../ledger/ops.dart';
@@ -38,7 +39,7 @@ Future<void> showBlockedNumbers(BuildContext context) async {
 Future<void> showDrawResults(BuildContext context) async {
   final store = context.read<LedgerStore>();
   var date = today();
-  var session = DateTime.now().hour < 14 ? 'morning' : 'evening';
+  var session = drawSession(DateTime.now());
   final number = TextEditingController();
   String? error;
   await showDialog<void>(

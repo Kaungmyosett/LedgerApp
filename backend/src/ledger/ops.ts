@@ -47,10 +47,14 @@ export const opSchema = z.discriminatedUnion('type', [
   z.object({ opId, type: z.literal('blocked.set'), numbers: z.array(num2).max(100) }).strict(),
   z.object({ opId, type: z.literal('draw.save'), date: dateStr, session, number: num2 }).strict(),
   z.object({ opId, type: z.literal('draw.delete'), date: dateStr, session }).strict(),
-  z.object({ opId, type: z.literal('cover.create'), id: uuid, code: z.string().max(20).optional(), requestedAmount: z.number().int().positive().max(1e12), date: dateStr }).strict(),
+  z.object({ opId, type: z.literal('cover.create'), id: uuid, code: z.string().max(20).optional(), requestedAmount: z.number().int().positive().max(1e12), date: dateStr, createdAt: z.string().max(40).optional() }).strict(),
   z.object({ opId, type: z.literal('cover.delete'), id: uuid }).strict(),
   z.object({ opId, type: z.literal('finalize'), date: dateStr, session, recordIds: z.record(uuid, uuid).default({}) }).strict(),
-  z.object({ opId, type: z.literal('finalized.delete'), id: uuid }).strict()
+  z.object({ opId, type: z.literal('finalized.delete'), id: uuid }).strict(),
+  z.object({
+    opId, type: z.literal('debt.record'), id: uuid, userId: uuid, date: dateStr,
+    kind: z.enum(['debt', 'repayment']), amount: money
+  }).strict()
 ]);
 export type Op = z.infer<typeof opSchema>;
 export const syncBodySchema = z.object({ ops: z.array(z.unknown()).max(200) }).strict();
@@ -66,6 +70,8 @@ export interface OpResult {
 // ------------------------------------------------------------------ helpers
 type Ctx = { db: PoolClient; clientId: string };
 const num = (v: unknown): number => Number(v);
+const deviceTimestamp = (value?: string) =>
+  value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null;
 
 async function audit(c: Ctx, action: string, entityType: string, entityId: string | null, before?: unknown, after?: unknown) {
   await writeAudit(c.db, { actorType: 'client', actorId: c.clientId, action: 'ledger.' + action, entityType, entityId, before, after });
@@ -169,7 +175,7 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     const blocked = await c.db.query('SELECT number FROM blocked_numbers WHERE client_id = $1 AND number::text = ANY($2::text[])', [c.clientId, nums]);
     if (blocked.rowCount) throw new OpError('BLOCKED_NUMBER', 'Blocked numbers: ' + blocked.rows.map((r) => String(r.number).trim()).join(', '));
     const code = await freshCode(c, 'ledger_entries', 'V', op.code);
-    const createdAt = op.createdAt && !Number.isNaN(Date.parse(op.createdAt)) ? new Date(op.createdAt) : null;
+    const createdAt = deviceTimestamp(op.createdAt);
     await c.db.query(
       `INSERT INTO ledger_entries (id, client_id, client_local_id, ledger_user_id, voucher_code, entry_mode, entry_date, device_created_at)
        VALUES ($1, $2, $1, $3, $4, $5, $6, $7)`,
@@ -257,9 +263,9 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     if (!made) throw new OpError('NO_COVER', 'ကာငွေမရှိပါ — nothing left to cover.');
     const code = await freshCode(c, 'cover_vouchers', 'C', op.code);
     await c.db.query(
-      `INSERT INTO cover_vouchers (id, client_id, client_local_id, voucher_code, requested_amount, cover_list_total, voucher_date)
-       VALUES ($1, $2, $1, $3, $4, $5, $6)`,
-      [op.id, c.clientId, code, op.requestedAmount, made.remainingTotal, op.date]
+      `INSERT INTO cover_vouchers (id, client_id, client_local_id, voucher_code, requested_amount, cover_list_total, voucher_date, device_created_at)
+       VALUES ($1, $2, $1, $3, $4, $5, $6, $7)`,
+      [op.id, c.clientId, code, op.requestedAmount, made.remainingTotal, op.date, deviceTimestamp(op.createdAt)]
     );
     const rowsToInsert = [
       ...made.allocations.map((a) => ({ ...a, kind: 'eaten' })),
@@ -339,6 +345,45 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
       [c.clientId]
     );
     await audit(c, 'finalize', 'client', c.clientId, undefined, { date: op.date, session: op.session, number: winning, vouchersFrozen: frozen.rowCount, coversClosed: coversClosed.rowCount, records: summary });
+  },
+
+  async 'debt.record'(c, op) {
+    const existing = await c.db.query(
+      'SELECT 1 FROM ledger_debt_entries WHERE client_id = $1 AND id = $2',
+      [c.clientId, op.id]
+    );
+    if (existing.rowCount) return;
+    const { rows } = await c.db.query(
+      'SELECT name, deleted_at FROM ledger_users WHERE client_id = $1 AND id = $2',
+      [c.clientId, op.userId]
+    );
+    const user = rows[0];
+    if (!user || (user.deleted_at && op.kind === 'debt')) {
+      throw new OpError('USER_NOT_FOUND', 'Commission user not found.');
+    }
+    if (op.kind === 'repayment') {
+      const { rows: balances } = await c.db.query(
+        `WITH days AS (
+           SELECT entry_date, SUM(CASE WHEN kind = 'debt' THEN amount ELSE -amount END) AS change
+             FROM ledger_debt_entries WHERE client_id = $1 AND ledger_user_id = $2
+            GROUP BY entry_date
+         ), running AS (
+           SELECT entry_date, SUM(SUM(change)) OVER (ORDER BY entry_date) AS balance
+             FROM (SELECT * FROM days UNION ALL SELECT $3::date, 0::numeric) dates
+            GROUP BY entry_date
+         )
+         SELECT MIN(balance) >= $4::numeric AS allowed FROM running WHERE entry_date >= $3::date`,
+        [c.clientId, op.userId, op.date, op.amount]
+      );
+      if (!balances[0].allowed) throw new OpError('REPAYMENT_EXCEEDS_DEBT', 'Repayment exceeds the outstanding debt.');
+    }
+    await c.db.query(
+      `INSERT INTO ledger_debt_entries (id, client_id, ledger_user_id, user_name, entry_date, kind, amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [op.id, c.clientId, op.userId, user.name, op.date, op.kind, op.amount]
+    );
+    await audit(c, 'debt.record', 'ledger_debt_entry', op.id, undefined,
+      { userId: op.userId, date: op.date, kind: op.kind, amount: op.amount });
   },
 
   async 'finalized.delete'(c, op) {

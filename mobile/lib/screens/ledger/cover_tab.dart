@@ -21,6 +21,12 @@ class _CoverTabState extends State<CoverTab> {
   final _amount = TextEditingController();
   String? _error;
 
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
   double? _eat(double? locked) {
     if (locked != null) return locked;
     final v = parseAmount(_amount.text);
@@ -76,15 +82,18 @@ class _CoverTabState extends State<CoverTab> {
             ),
             if (plan != null) ...[
               const SizedBox(height: 10),
-              Text(context.t('cover.eatNow', {'v': money(plan.eatTotal)}), style: const TextStyle(fontWeight: FontWeight.bold)),
-              plan.eat.isEmpty ? const Text('—') : _chips(plan.eat),
-              const SizedBox(height: 8),
+              if (plan.eat.isNotEmpty || covers.isEmpty) ...[
+                KV(context.t('cover.sumEat'), money(plan.eatTotal), bold: true),
+                KV(context.t('cover.eatCount'), '${plan.eat.length}'),
+                if (plan.eat.isNotEmpty) _chips(plan.eat),
+                const SizedBox(height: 8),
+              ],
+              KV(context.t('cover.sumCover'), money(plan.coverTotal), bold: true),
+              KV(context.t('cover.numberCount'), '${plan.cover.length}'),
               if (result == null)
                 Text(context.t('cover.nothing'), style: TextStyle(color: err))
-              else ...[
-                Text(context.t('cover.coverNow', {'v': money(result.remainingTotal)}), style: const TextStyle(fontWeight: FontWeight.bold)),
+              else
                 _chips(result.remainingLines),
-              ],
             ],
             if (_error != null) Text(_error!, style: TextStyle(color: err)),
             const SizedBox(height: 8),

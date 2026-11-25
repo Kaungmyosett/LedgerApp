@@ -104,6 +104,8 @@ test('full ledger flow, idempotency and client isolation', { skip }, async () =>
   const rec = snap.finalizedRecords.find((x) => x.id === recIds[u1])!;
   assert.deepEqual({ total: rec.total, winAmount: rec.winAmount, payout: rec.payout, commission: rec.commission, payment: rec.payment, net: rec.net },
     { total: 2200, winAmount: 1200, payout: 96000, commission: 220, payment: 5000, net: 2200 - 96000 - 220 - 5000 });
+  assert.deepEqual([rec.covered, rec.eaten], [1360, 840]);
+  assert.deepEqual(snap.finalizedRecords.filter((x) => x.userId === u2).map((x) => [x.covered, x.eaten]), [[240, 70]]);
   r = await applyBatch(A, [op('entry.update', { id: e1, lines: [{ num: '01', amount: 1 }] }), op('entry.delete', { id: e1 })]);
   assert.deepEqual(r.map((x) => x.code), ['ENTRY_FINALIZED', 'ENTRY_FINALIZED']);
 
@@ -112,6 +114,8 @@ test('full ledger flow, idempotency and client isolation', { skip }, async () =>
   assert.deepEqual(r.map((x) => x.code ?? 'ok'), ['ok', 'ok', 'ENTRY_FINALIZED', 'ok'], JSON.stringify(r));
   snap = await loadSnapshot(pool, A);
   assert.ok(!snap.finalizedRecords.some((x) => x.id === recIds[u1]));
+  assert.deepEqual(snap.finalizedRecords.map((x) => [x.covered, x.eaten]), [[240, 70]]);
+
   assert.equal(snap.drawResults.length, 0);
   assert.equal(snap.coverVouchers.length, 0);
   assert.deepEqual(snap.users.map((u) => u.username), ['aung']);
@@ -129,4 +133,26 @@ test('invalid operations are reported without stopping the batch', { skip }, asy
   const r = await applyBatch(A, [{ opId: uid(), type: 'user.create', id: 'nope' }, { type: 'bogus' }, op('blocked.set', { numbers: ['07'] })]);
   assert.deepEqual(r.map((x) => x.status), ['error', 'error', 'ok']);
   assert.equal(r[0]!.code, 'INVALID_OPERATION');
+});
+
+test('debt entries sync once, preserve repayment chronology and stay client-scoped', { skip }, async () => {
+  const client = await newClient();
+  const other = await newClient();
+  const userId = uid();
+  const debt = (kind: string, date: string, amount: number) =>
+    op('debt.record', { id: uid(), userId, date, kind, amount });
+  const opening = debt('debt', D, 100.50);
+  const later = debt('repayment', '2026-11-20', 60);
+  const result = await applyBatch(client, [
+    op('user.create', { id: userId, name: 'May', username: 'may', commissionPercent: 10, odd: 80, payment: null }),
+    opening, opening, later, debt('repayment', '2026-11-19', 45),
+    op('user.delete', { id: userId }),
+    debt('repayment', '2026-11-25', 40.50),
+  ]);
+  assert.deepEqual(result.map((r) => r.code ?? r.status),
+    ['ok', 'ok', 'ok', 'ok', 'REPAYMENT_EXCEEDS_DEBT', 'ok', 'ok']);
+  assert.deepEqual((await loadSnapshot(pool, client)).debtEntries.map(({kind, amount}) => [kind, amount]),
+    [['debt', 100.50], ['repayment', 60], ['repayment', 40.50]]);
+  assert.deepEqual((await loadSnapshot(pool, other)).debtEntries, []);
+  assert.equal((await applyBatch(other, [debt('repayment', D, 1)]))[0]!.code, 'USER_NOT_FOUND');
 });

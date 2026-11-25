@@ -29,7 +29,7 @@ class _BetsTabState extends State<BetsTab> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: DropdownButtonFormField<String?>(
-              value: _userFilter,
+              initialValue: _userFilter,
               decoration: InputDecoration(labelText: context.t('bets.user'), isDense: true),
               items: [
                 DropdownMenuItem<String?>(value: null, child: Text(context.t('bets.allUsers'))),
@@ -60,6 +60,7 @@ class _BetsTabState extends State<BetsTab> {
         ),
       ]),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'addVoucher',
         onPressed: () {
           if (d.users.isEmpty) return toast(context, context.t('bets.needUser'));
           Navigator.of(context).push(MaterialPageRoute<void>(
@@ -134,8 +135,9 @@ List<Line> _merge(List<Line> l) {
 
 /// New voucher (Format text or manual rows) or edit/delete an existing one (rows).
 class EntryScreen extends StatefulWidget {
-  const EntryScreen({super.key, this.existing});
+  const EntryScreen({super.key, this.existing, this.userId});
   final LEntry? existing;
+  final String? userId;
   @override
   State<EntryScreen> createState() => _EntryScreenState();
 }
@@ -148,6 +150,7 @@ class _EntryScreenState extends State<EntryScreen> {
   final List<_Row> _rows = [];
   String? _error;
   bool _busy = false;
+  bool _editedInputs = false;
 
   bool get _editing => widget.existing != null;
 
@@ -156,7 +159,7 @@ class _EntryScreenState extends State<EntryScreen> {
     super.initState();
     final d = context.read<LedgerStore>().data;
     final e = widget.existing;
-    _userId = e?.userId ?? d.users.first.id;
+    _userId = e?.userId ?? widget.userId ?? d.users.first.id;
     _date = e?.date ?? today();
     _formatMode = e == null;
     if (e != null) {
@@ -167,6 +170,24 @@ class _EntryScreenState extends State<EntryScreen> {
       _rows.add(_Row());
     }
   }
+
+  @override
+  void dispose() {
+    _format.dispose();
+    for (final row in _rows) {
+      row.num.dispose();
+      row.amount.dispose();
+    }
+    for (final row in _removedRows) {
+      row.num.dispose();
+      row.amount.dispose();
+    }
+    super.dispose();
+  }
+
+  final _removedRows = <_Row>[];
+
+  void _inputChanged(String _) => setState(() => _editedInputs = true);
 
   /// Lines described by the current inputs; sets [_error] text when something is wrong.
   List<Line>? _collect({bool silent = false}) {
@@ -252,7 +273,7 @@ class _EntryScreenState extends State<EntryScreen> {
               Row(children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _userId,
+                    initialValue: d.users.any((u) => u.id == _userId) ? _userId : null,
                     isExpanded: true,
                     decoration: InputDecoration(labelText: context.t('bets.user'), prefixIcon: const Icon(Icons.person_outline), border: const OutlineInputBorder(), isDense: true),
                     items: d.users.map((u) => DropdownMenuItem(value: u.id, child: Text(u.name, overflow: TextOverflow.ellipsis))).toList(),
@@ -295,7 +316,7 @@ class _EntryScreenState extends State<EntryScreen> {
             maxLines: 12,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 16),
             decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '12/34-500\n05R1000\n3ပါတ်200\nအပူး-1000', alignLabelWithHint: true),
-            onChanged: (_) => setState(() {}),
+            onChanged: _inputChanged,
           ),
           if (preview!.errors.isNotEmpty)
             Padding(
@@ -309,8 +330,10 @@ class _EntryScreenState extends State<EntryScreen> {
             child: Row(children: [
               SizedBox(width: 84, child: Text(context.t('bets.no'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelLarge)),
               const SizedBox(width: 8),
-              SizedBox(width: 112, child: Text(context.t('bets.kind'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelLarge)),
-              const SizedBox(width: 8),
+              if (!_editing) ...[
+                SizedBox(width: 112, child: Text(context.t('bets.kind'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelLarge)),
+                const SizedBox(width: 8),
+              ],
               Expanded(child: Text(context.t('bets.amount'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelLarge)),
               const SizedBox(width: 40),
             ]),
@@ -329,7 +352,9 @@ class _EntryScreenState extends State<EntryScreen> {
           const SizedBox(height: 16),
           Text(context.t('bets.preview', {'n': shown.length}), style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 6),
-          Wrap(spacing: 6, runSpacing: 6, children: [
+          Opacity(
+            opacity: _editing && !_editedInputs ? 0.48 : 1,
+            child: Wrap(spacing: 6, runSpacing: 6, children: [
             for (final l in shown)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -342,7 +367,8 @@ class _EntryScreenState extends State<EntryScreen> {
                   TextSpan(text: '  ${money(l.amount)}'),
                 ])),
               ),
-          ]),
+            ]),
+          ),
         ],
         if (_error != null)
           Container(
@@ -384,6 +410,7 @@ class _EntryScreenState extends State<EntryScreen> {
     final rowTotal = (lines ?? const <Line>[]).fold(0.0, (a, x) => a + x.amount);
     const field = OutlineInputBorder();
     return Container(
+      key: ObjectKey(r),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(10, 10, 4, 6),
       decoration: BoxDecoration(border: Border.all(color: cs.outlineVariant), borderRadius: BorderRadius.circular(12)),
@@ -406,17 +433,17 @@ class _EntryScreenState extends State<EntryScreen> {
                 isDense: true,
                 border: field,
               ),
-              onChanged: (_) => setState(() {}),
+              onChanged: _inputChanged,
             ),
           ),
           const SizedBox(width: 8),
-          // type (middle)
+          if (!_editing) ...[
           SizedBox(
             width: 112,
             child: DropdownButtonFormField<String>(
-              value: r.kind,
+              initialValue: r.kind,
               isExpanded: true,
-              decoration: InputDecoration(isDense: true, border: field),
+              decoration: const InputDecoration(isDense: true, border: field),
               items: [
                 for (final k in _kinds)
                   DropdownMenuItem(
@@ -437,6 +464,7 @@ class _EntryScreenState extends State<EntryScreen> {
             ),
           ),
           const SizedBox(width: 8),
+          ],
           // amount
           Expanded(
             child: TextField(
@@ -444,15 +472,18 @@ class _EntryScreenState extends State<EntryScreen> {
               textAlign: TextAlign.right,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               style: const TextStyle(fontSize: 16),
-              decoration: InputDecoration(hintText: '0', isDense: true, border: field),
-              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(hintText: '0', isDense: true, border: field),
+              onChanged: _inputChanged,
             ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: context.t('common.delete'),
             icon: Icon(Icons.close, color: _rows.length > 1 ? cs.error : null),
-            onPressed: _rows.length > 1 ? () => setState(() => _rows.removeAt(i)) : null,
+            onPressed: _rows.length > 1 ? () => setState(() {
+              _removedRows.add(_rows.removeAt(i));
+              _editedInputs = true;
+            }) : null,
           ),
         ]),
         if (lines != null && lines.length > 1)

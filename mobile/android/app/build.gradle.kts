@@ -48,6 +48,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (providers.environmentVariable("LEDGER_LOCAL_PREVIEW").orNull == "true") {
+                applicationIdSuffix = ".preview"
+                resValue("string", "app_name", "2D Ledger Preview")
+            }
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.

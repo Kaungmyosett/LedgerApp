@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../i18n/lang.dart';
+import '../ledger/draw_period.dart';
 import '../ledger/ledger_store.dart';
 import '../models/client_account.dart';
 import '../util/format.dart';
@@ -14,8 +16,10 @@ import '../util/server_url.dart';
 import 'ledger/bets_tab.dart';
 import 'ledger/common.dart';
 import 'ledger/cover_tab.dart';
+import 'ledger/debt_tab.dart';
 import 'ledger/dialogs.dart';
 import 'ledger/history_tab.dart';
+import 'ledger/home_tab.dart';
 import 'ledger/numbers_tab.dart';
 import 'ledger/users_tab.dart';
 
@@ -31,10 +35,14 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
   LedgerStore? _store;
   String? _initError;
   ClientAccount? _me; // plan end date for the banner; loaded in the background, offline is fine
+  late DrawPeriod _drawPeriod;
+  Timer? _periodTimer;
 
   @override
   void initState() {
     super.initState();
+    _drawPeriod = drawPeriodAt(DateTime.now());
+    _refreshDrawPeriod();
     WidgetsBinding.instance.addObserver(this);
     _open();
   }
@@ -69,14 +77,24 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _refreshDrawPeriod();
       _store?.sync();
       _loadMe();
     }
   }
 
+  void _refreshDrawPeriod() {
+    final now = DateTime.now();
+    final period = drawPeriodAt(now);
+    if (period != _drawPeriod) setState(() => _drawPeriod = period);
+    _periodTimer?.cancel();
+    _periodTimer = Timer(nextDrawPeriod(now).difference(now), _refreshDrawPeriod);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _periodTimer?.cancel();
     _store?.dispose();
     super.dispose();
   }
@@ -119,10 +137,13 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
     }
     final store = _store;
     if (store == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    return ChangeNotifierProvider<LedgerStore>.value(
-      value: store,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<LedgerStore>.value(value: store),
+        Provider<DrawPeriod>.value(value: _drawPeriod),
+      ],
       child: DefaultTabController(
-        length: 5,
+        length: 7,
         child: Consumer<LedgerStore>(builder: (context, s, _) {
           return Scaffold(
             appBar: AppBar(
@@ -158,14 +179,21 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
                 ),
               ],
               bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [
-                Tab(text: context.t('tab.users')), Tab(text: context.t('tab.bets')), Tab(text: context.t('tab.numbers')),
-                Tab(text: context.t('tab.cover')), Tab(text: context.t('tab.history')),
+                Tab(text: context.t('tab.home')), Tab(text: context.t('tab.users')), Tab(text: context.t('tab.bets')), Tab(text: context.t('tab.numbers')),
+                Tab(text: context.t('tab.cover')), Tab(text: context.t('tab.history')), Tab(text: context.t('tab.debt')),
               ]),
             ),
             body: Column(children: [
               _planBanner(context, s),
               if (s.failed.isNotEmpty) _FailedBanner(store: s),
-              const Expanded(child: TabBarView(children: [UsersTab(), BetsTab(), NumbersTab(), CoverTab(), HistoryTab()])),
+              Expanded(child: TabBarView(children: [
+                HomeTab(openDebt: () {
+                  final tabs = DefaultTabController.of(context);
+                  tabs.animateTo(tabs.length - 1);
+                }),
+                const UsersTab(), const BetsTab(), const NumbersTab(), const CoverTab(),
+                const HistoryTab(), const DebtTab(),
+              ])),
             ]),
           );
         }),

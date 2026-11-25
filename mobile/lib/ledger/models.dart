@@ -121,9 +121,11 @@ class LFinal {
     required this.id, required this.userId, required this.userName, required this.date, required this.session, required this.number,
     required this.total, required this.winAmount, required this.odd, required this.payout, required this.commission,
     required this.payment, required this.net, required this.createdAt,
+    this.eaten, this.covered,
   });
   final String id, userId, userName, date, session, number, createdAt;
   final double total, winAmount, odd, payout, commission, payment, net;
+  final double? eaten, covered;
   factory LFinal.fromJson(Map<String, dynamic> j) => LFinal(
         id: j['id'] as String,
         userId: (j['userId'] ?? '') as String,
@@ -133,6 +135,7 @@ class LFinal {
         number: j['number'] as String,
         total: _d(j['total']), winAmount: _d(j['winAmount']), odd: _d(j['odd']), payout: _d(j['payout']),
         commission: _d(j['commission']), payment: _d(j['payment']), net: _d(j['net']),
+        eaten: (j['eaten'] as num?)?.toDouble(), covered: (j['covered'] as num?)?.toDouble(),
         createdAt: (j['createdAt'] ?? '') as String,
       );
   Map<String, dynamic> toJson() => {
@@ -142,17 +145,51 @@ class LFinal {
       };
 }
 
+class LDebtEntry {
+  const LDebtEntry({
+    required this.id,
+    required this.userId,
+    required this.userName,
+    required this.date,
+    required this.kind,
+    required this.amount,
+    required this.createdAt,
+  });
+
+  final String id, userId, userName, date, kind, createdAt;
+  final double amount;
+
+  int get changeCents => (amount * 100).round() * (kind == 'debt' ? 1 : -1);
+
+  factory LDebtEntry.fromJson(Map<String, dynamic> json) => LDebtEntry(
+    id: json['id'] as String,
+    userId: json['userId'] as String,
+    userName: json['userName'] as String,
+    date: json['date'] as String,
+    kind: json['kind'] as String,
+    amount: _d(json['amount']),
+    createdAt: json['createdAt'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id, 'userId': userId, 'userName': userName, 'date': date,
+    'kind': kind, 'amount': amount, 'createdAt': createdAt,
+  };
+}
+
 /// The whole ledger of one client. Replaced as a unit by a server snapshot; changed locally by [applyOpLocally].
 class LedgerData {
   LedgerData({
     List<LUser>? users, List<LEntry>? entries, List<String>? blockedNumbers, List<LDraw>? drawResults,
-    List<LCover>? coverVouchers, List<LFinal>? finalizedRecords, this.serverTime = '',
+    List<LCover>? coverVouchers, List<LFinal>? finalizedRecords,
+    List<LDebtEntry>? debtEntries, this.serverTime = '',
   })  : users = users ?? [],
         entries = entries ?? [],
         blockedNumbers = blockedNumbers ?? [],
         drawResults = drawResults ?? [],
         coverVouchers = coverVouchers ?? [],
-        finalizedRecords = finalizedRecords ?? [];
+        finalizedRecords = finalizedRecords ?? [],
+        debtEntries = debtEntries ?? [];
 
   List<LUser> users;
   List<LEntry> entries;
@@ -160,6 +197,7 @@ class LedgerData {
   List<LDraw> drawResults;
   List<LCover> coverVouchers;
   List<LFinal> finalizedRecords;
+  List<LDebtEntry> debtEntries;
   String serverTime;
 
   factory LedgerData.fromJson(Map<String, dynamic> j) {
@@ -172,6 +210,7 @@ class LedgerData {
       drawResults: list('drawResults', LDraw.fromJson),
       coverVouchers: list('coverVouchers', LCover.fromJson),
       finalizedRecords: list('finalizedRecords', LFinal.fromJson),
+      debtEntries: list('debtEntries', LDebtEntry.fromJson),
       serverTime: (j['serverTime'] ?? '') as String,
     );
   }
@@ -183,6 +222,7 @@ class LedgerData {
         'blockedNumbers': blockedNumbers,
         'drawResults': drawResults.map((x) => x.toJson()).toList(),
         'coverVouchers': coverVouchers.map((x) => x.toJson()).toList(),
+        'debtEntries': debtEntries.map((x) => x.toJson()).toList(),
         'finalizedRecords': finalizedRecords.map((x) => x.toJson()).toList(),
       };
 

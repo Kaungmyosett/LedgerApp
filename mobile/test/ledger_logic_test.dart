@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledger_app/ledger/draw_period.dart';
+import 'package:ledger_app/ledger/history_allocations.dart';
 import 'package:ledger_app/ledger/logic.dart';
 import 'package:ledger_app/ledger/models.dart';
 import 'package:ledger_app/ledger/ops.dart';
@@ -19,6 +21,42 @@ void sameLines(List<Line> got, List<Line> want, String ctx) {
 
 void main() {
   final fx = jsonDecode(File('test/fixtures/ledger_golden.json').readAsStringSync()) as Map<String, dynamic>;
+
+  test('draw periods match date and switch at 13:00', () {
+    final morning = DateTime(2026, 11, 25, 12, 59);
+    final evening = DateTime(2026, 11, 25, 13);
+    final data = LedgerData(drawResults: const [
+      LDraw(date: '2026-11-24', session: 'evening', number: '09'),
+      LDraw(date: '2026-11-25', session: 'morning', number: '25'),
+    ], entries: [
+      LEntry(id: 'entry', userId: 'a', code: '', mode: 'manual',
+          date: '2026-11-25', createdAt: morning.toUtc().toIso8601String(),
+          lines: const [Line('00', 1000)]),
+    ]);
+    expect(nextDrawPeriod(morning), evening);
+    expect(data.drawFor(drawPeriodAt(morning))?.number, '25');
+    expect(data.entriesFor(drawPeriodAt(morning)), hasLength(1));
+    expect(data.drawFor(drawPeriodAt(evening)), isNull);
+    expect(data.entriesFor(drawPeriodAt(evening)), isEmpty);
+    expect(data.drawFor(drawPeriodAt(DateTime(2026, 11, 26, 12))), isNull);
+  });
+
+  test('history splits allocations per number and preserves the last cent', () {
+    final entries = [
+      for (final user in ['b', 'a', 'c'])
+        LEntry(id: user, userId: user, code: '', mode: 'manual', date: '2026-11-25',
+            createdAt: '', lines: [const Line('00', 1), if (user == 'a') const Line('01', 4)]),
+    ];
+    const covers = [
+      LCover(id: 'cover', code: '', seq: 1, requestedAmount: 1, coverListTotal: 3,
+          date: '2026-11-25', createdAt: '', allocations: [Line('00', 1)],
+          remainingLines: [Line('01', 3)]),
+    ];
+    final shares = historyAllocations(entries, covers);
+    expect(shares['a'], (eaten: 0.34, covered: 3.0));
+    expect(shares['b'], (eaten: 0.33, covered: 0.0));
+    expect(shares['c'], (eaten: 0.33, covered: 0.0));
+  });
 
   test('a double (00, 11, …) is never charged twice', () {
     Map<String, double> amt(String raw) => {for (final l in parseFormat(raw).result) l.num: l.amount};

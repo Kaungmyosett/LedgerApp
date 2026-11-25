@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../i18n/lang.dart';
+import '../../ledger/draw_period.dart';
 import '../../ledger/ledger_store.dart';
 import '../../ledger/logic.dart';
 import '../../ledger/models.dart';
 import '../../ledger/ops.dart';
+import 'bets_tab.dart';
 import 'common.dart';
 
 class UsersTab extends StatelessWidget {
@@ -14,46 +17,83 @@ class UsersTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<LedgerStore>();
-    final users = store.data.users;
-    // Latest draw result: a user who staked that number on that date has a payout to show.
-    final sorted = sortDraws(store.data.drawResults);
-    final draw = sorted.isEmpty ? null : sorted.first;
+    final data = store.data;
+    final period = context.watch<DrawPeriod?>() ?? drawPeriodAt(DateTime.now());
+    final draw = data.drawFor(period);
+    final entriesByUser = <String, List<Line>>{};
+    for (final entry in data.entriesFor(period)) {
+      entriesByUser.putIfAbsent(entry.userId, () => []).addAll(entry.lines);
+    }
+    final theme = Theme.of(context);
     return Scaffold(
-      body: users.isEmpty
+      body: data.users.isEmpty
           ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(context.t('users.empty'), textAlign: TextAlign.center)))
-          : ListView.separated(
-              padding: const EdgeInsets.only(bottom: 88),
-              itemCount: users.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (ctx, i) {
-                final u = users[i];
-                final total = store.data.entries.where((e) => e.userId == u.id).fold(0.0, (a, e) => a + e.total);
-                // Stake on the latest winning number (plain amount, not multiplied by the odd).
-                final winAmount = draw == null
-                    ? 0.0
-                    : settleUser(u, store.data.entries.where((e) => e.userId == u.id && e.date == draw.date).expand((e) => e.lines).toList(), draw.number).winAmount;
-                return ListTile(
-                  title: Text(u.name),
-                  // Winning stake (if the latest draw hits) is shown as a red amount right after the payment.
-                  subtitle: Text.rich(TextSpan(children: [
-                    TextSpan(text: context.t('users.sub', {'c': money(u.commissionPercent), 'o': money(u.odd)}) +
-                        (u.payment != null ? context.t('users.subPay', {'p': money(u.payment!)}) : '')),
-                    if (winAmount > 0)
-                      TextSpan(text: ' · ${context.t('money.payout')} ${money(winAmount)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700)),
-                  ])),
-                  trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text(money(total), style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text(context.t('settle.total'), style: const TextStyle(fontSize: 11)),
-                  ]),
-                  onTap: () => _actions(ctx, u),
-                );
-              },
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('${period.date} · ${sessionLabel(context, period.session)}', style: theme.textTheme.titleSmall),
+                ),
+                for (final user in data.users)
+                  _userCard(context, store, user, entriesByUser[user.id] ?? const [], draw),
+              ],
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'addUser',
         onPressed: () => showUserForm(context),
         icon: const Icon(Icons.person_add),
         label: Text(context.t('users.add')),
       ),
+    );
+  }
+
+  Widget _userCard(BuildContext context, LedgerStore store, LUser user, List<Line> lines, LDraw? draw) {
+    final theme = Theme.of(context);
+    final summary = settleUser(user, lines, draw?.number ?? '');
+    final numbers = lines.where((line) => line.amount > 0).map((line) => line.num).toSet();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+          title: Text(user.name, style: theme.textTheme.titleMedium),
+          subtitle: Text(context.t('users.sub', {'c': money(user.commissionPercent), 'o': money(user.odd)})),
+          onTap: () => _actions(context, user),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              tooltip: context.t('users.settlement'),
+              icon: const Icon(Icons.receipt_long_outlined),
+              onPressed: () => showSettlement(context, user),
+            ),
+            IconButton(
+              tooltip: context.t('bets.add'),
+              icon: const Icon(Icons.add),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ChangeNotifierProvider<LedgerStore>.value(
+                  value: store,
+                  child: EntryScreen(userId: user.id),
+                ),
+              )),
+            ),
+          ]),
+        ),
+        ColoredBox(
+          color: theme.colorScheme.surfaceContainerHighest,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(children: [
+              KV(context.t('settle.total'), money(summary.total), bold: true),
+              KV(context.t('money.commission'), money(summary.commission)),
+              KV(context.t('bets.no'), '${numbers.length}'),
+              if (draw != null && summary.total > 0) ...[
+                KV(context.t('money.payout'), money(summary.payout)),
+                KV(context.t('users.net'), money(summary.net), bold: true),
+              ],
+            ]),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -153,15 +193,31 @@ Future<void> showUserForm(BuildContext context, {LUser? existing}) async {
 
 /// One user's result for a chosen date and session (read-only; nothing is saved).
 Future<void> showSettlement(BuildContext context, LUser u) async {
-  var date = today();
-  var session = 'evening';
+  final current = context.read<DrawPeriod?>() ?? drawPeriodAt(DateTime.now());
+  var date = current.date;
+  var session = current.session;
   await showDialog<void>(
     context: context,
     builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
       final d = context.read<LedgerStore>().data;
-      final draw = d.drawResults.where((x) => x.date == date && x.session == session).firstOrNull;
-      final lines = d.entries.where((e) => e.userId == u.id && e.date == date).expand((e) => e.lines).toList();
-      final s = draw == null ? null : settleUser(u, lines, draw.number);
+      final period = (date: date, session: session);
+      final draw = d.drawFor(period);
+      final amounts = <String, double>{};
+      for (final entry in d.entriesFor(period).where((e) => e.userId == u.id)) {
+        for (final line in entry.lines) {
+          amounts.update(line.num, (amount) => amount + line.amount, ifAbsent: () => line.amount);
+        }
+      }
+      final numbers = amounts.keys.toList()..sort();
+      final lines = [for (final n in numbers) Line(n, amounts[n]!)];
+      final s = settleUser(u, lines, draw?.number ?? '');
+      final receipt = [
+        '${ctx.t('bets.no')}	${ctx.t('users.amount')}',
+        for (final line in lines) '${line.num}	${money(line.amount)}',
+        '',
+        '${ctx.t('settle.total')} = ${money(s.total)}',
+        '${ctx.t('money.commission')} = ${money(s.commission)}',
+      ].join('\n');
       return AlertDialog(
         title: Text(context.t('settle.title', {'name': u.name})),
         content: SingleChildScrollView(
@@ -187,16 +243,16 @@ Future<void> showSettlement(BuildContext context, LUser u) async {
               ),
             ]),
             const SizedBox(height: 12),
-            if (lines.fold(0.0, (a, x) => a + x.amount) == 0)
+            if (lines.isEmpty)
               Text(context.t('settle.noStake'), style: const TextStyle(fontWeight: FontWeight.w600))
             else if (draw == null) ...[
-              KV(context.t('settle.total'), money(lines.fold(0.0, (a, x) => a + x.amount)), bold: true),
+              KV(context.t('settle.total'), money(s.total), bold: true),
               const SizedBox(height: 8),
               Text(context.t('settle.noDraw')),
             ] else ...[
               Text(context.t('settle.number', {'n': draw.number}), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              KV(context.t('settle.total'), money(s!.total), bold: true),
+              KV(context.t('settle.total'), money(s.total), bold: true),
               KV('${context.t('money.payout')} (${money(s.winAmount)} × ${money(s.odd)})', money(s.payout),
                   bold: s.payout > 0, color: s.payout > 0 ? Colors.red.shade700 : null),
               KV('${context.t('money.commission')} (${money(s.commissionPercent)}%)', money(s.commission)),
@@ -204,9 +260,30 @@ Future<void> showSettlement(BuildContext context, LUser u) async {
               const Divider(),
               KV(context.t('money.net'), money(s.net), bold: true, color: s.net < 0 ? Colors.red : Colors.green.shade700),
             ],
+            const Divider(height: 24),
+            Text(ctx.t('users.voucherNumbers'), style: Theme.of(ctx).textTheme.titleSmall),
+            if (lines.isNotEmpty) ...[
+              KV(ctx.t('bets.no'), ctx.t('users.amount'), bold: true),
+              for (final line in lines) KV(line.num, money(line.amount)),
+              const Divider(),
+              KV(ctx.t('settle.total'), money(s.total), bold: true),
+              KV(ctx.t('money.commission'), money(s.commission)),
+            ] else
+              Text(ctx.t('bets.empty')),
           ]),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.close')))],
+        actions: [
+          if (lines.isNotEmpty)
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: receipt));
+                if (ctx.mounted) toast(context, ctx.t('users.voucherCopied'));
+              },
+              icon: const Icon(Icons.copy),
+              label: Text(ctx.t('common.copy')),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.close'))),
+        ],
       );
     }),
   );

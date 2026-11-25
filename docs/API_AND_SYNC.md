@@ -61,10 +61,15 @@ Client endpoints are scoped from the authenticated account on the server. The ap
 
 All under `/v1/client/ledger`, Client token only; the client id always comes from the token.
 
-* `GET /snapshot` — the whole ledger: `users, entries (active only), blockedNumbers, drawResults, coverVouchers, finalizedRecords`.
+* `GET /snapshot` — the whole ledger: `users, entries (active only), blockedNumbers, drawResults, coverVouchers, finalizedRecords, debtEntries`.
 * `POST /sync` — body `{ "ops": [ ... ] }` (max 200). Operations run **in order**, each in its own transaction under a per-client advisory lock. Answer: `{ "results": [ {opId, status: "ok"|"error", code?, message?, data?} ] }`.
 
-Operations (each has a client-generated `opId`, and entity ids are client-generated UUIDs): `user.create/update/delete`, `entry.create/update/delete`, `blocked.set`, `draw.save/delete`, `cover.create/delete`, `finalize`, `finalized.delete`.
+Operations (each has a client-generated `opId`, and entity ids are client-generated UUIDs): `user.create/update/delete`, `entry.create/update/delete`, `blocked.set`, `draw.save/delete`, `cover.create/delete`, `finalize`, `finalized.delete`, `debt.record`.
+
+`debt.record` takes `id`, `userId`, `date`, `kind` (`debt` or `repayment`), and a positive `amount`. A repayment cannot create a negative balance on any report date. Debt items are entered separately from settlement and are retained after a commission user is deleted.
+
+Finalized records include `covered` and `eaten`. Each frozen amount is split by the settled users’ stake on that number. Rounding remainders are assigned by largest fractional share, with user IDs as the tie-breaker. These amounts are reported alongside the finalized net.
+
 
 Rules the app relies on:
 
