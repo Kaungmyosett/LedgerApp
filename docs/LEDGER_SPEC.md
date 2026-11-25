@@ -39,17 +39,16 @@ Format lines (split on newline, `,` or `;`), amounts are positive integers:
 | `Apu`, `Nyiko`, `Power`, `Natkat` + amount | fixed number sets (listed in the HTML source) |
 
 - Repeated numbers in one submission are merged by adding amounts.
-- Blocked numbers are removed from the preview and reported as rejected (with their total). If everything is blocked nothing is saved.
-- Manual mode rejects any blocked number outright.
-- A saved voucher gets a code `V` + 8 digits and today's date.
-- **DECISION (offline):** the phone parses and previews on-device (so it works offline) and saves a draft with a provisional voucher code. The server stores the draft's lines as sent, keeps the code if it is unused, otherwise issues a new one and returns it.
-- Editing a voucher replaces its lines (numbers 00–99, amount > 0, at least one line; blocked numbers are **not** re-checked on edit in the HTML).
-- **DECISION:** "delete voucher / commission user / cover voucher" become soft deletes with an audit record. They disappear from the screens exactly as in the HTML but nothing is physically lost.
+- In both entry modes, blocked numbers and amounts are shown separately and excluded from the saved voucher. An all-blocked submission leaves the voucher unchanged (or creates no voucher). Every submitted blocked number and its amount appears in the blocked-number log under the submitting commission user's name.
+- A saved voucher gets a code `V` + 8 digits and the selected date and draw session.
+- **DECISION (offline):** the phone parses and previews on-device (so it works offline) and saves a draft with a provisional voucher code. The server rechecks the blocked list, keeps the allowed lines, and preserves or replaces the provisional code as needed.
+- Editing a voucher replaces its lines (numbers 00–99, amount > 0, at least one allowed line; blocked numbers are rechecked on edit).
+- **DECISION:** "delete voucher / commission user / cover voucher" become soft deletes with an audit record. A commission user with linked vouchers, retained history, or debt entries cannot be deleted.
 
 ## 4. Per-user settlement (စာရင်းတွက်မည် and Finalize)
-For one commission user and one date, using that date's draw number:
+For one commission user and one date/session, using that draw number:
 ```
-total      = sum of all line amounts that day
+total      = sum of all line amounts in that date and session
 winAmount  = sum of lines whose number == drawn number
 payout     = winAmount × odd
 commission = total × commission% / 100
@@ -66,8 +65,8 @@ No draw number yet → show only total and payment.
 
 ## 6. Finalize (အပြီးစာရင်းချုပ်) — twice a day
 Finalize is done **per draw (date + session)**. It uses the most recent draw that has not been finalized yet. Refused if there is no draw, or if every draw is already finalized.
-For **every** commission user it writes a history record (formulas in section 4, `payment` included, plus the session), sets each user's `payment` back to empty, and moves that date's current vouchers out of the "all bets" list.
-- Morning finalize takes the vouchers that exist at that moment; vouchers entered afterwards belong to the evening finalize.
+For **every** commission user it writes a history record (formulas in section 4, `payment` included, plus the session), sets each user's `payment` back to empty, and moves that date and session's current vouchers out of the "all bets" list.
+- Only the selected session's vouchers and cover vouchers are frozen. New vouchers store an explicit session. Existing open vouchers are assigned from their creation time using the Yangon 13:00 cutoff; previous finalizations remain frozen.
 - **DECISION:** the HTML deletes the finalized vouchers. The server keeps them, marked finalized (hidden from the active lists, frozen, never deletable). The screen behaves the same.
 - **History records can be deleted (new):** each history row has a delete button with a confirmation. The server does a soft delete recorded in the audit log (the numbers are kept in the audit entry); the record disappears from the history screen. Record values can never be edited, only deleted. Deleting a history record does not bring its vouchers back.
 

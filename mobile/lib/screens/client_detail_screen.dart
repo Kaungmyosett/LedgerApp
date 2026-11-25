@@ -115,10 +115,94 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
     )) {
       return;
     }
+    if (!mounted) return;
     try {
-      await context.read<ApiClient>().patch('/v1/admin/clients/${_c.id}', {'isActive': !_c.isActive});
+      final updated = await context.read<ApiClient>().patch('/v1/admin/clients/${_c.id}', {'isActive': !deactivating}) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _c = ClientAccount.fromJson(updated));
       _changed = true;
-      await _reload();
+    } catch (e) {
+      if (mounted) _toast(describeError(e));
+    }
+  }
+
+  Future<DateTime?> _pickExpiry({
+    required DateTime initial,
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) async {
+    final date = await showDatePicker(
+      context: context, initialDate: initial, firstDate: firstDate, lastDate: lastDate,
+    );
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+    if (time == null || !mounted) return null;
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _chooseTestExpiry() async {
+    final now = DateTime.now();
+    final initial = _c.testAccessUntil ?? now;
+    final until = await _pickExpiry(
+      initial: initial,
+      firstDate: DateTime(initial.year < now.year ? initial.year : now.year - 5),
+      lastDate: DateTime(initial.year > now.year ? initial.year + 1 : now.year + 10),
+    );
+    if (until != null && mounted) await _setTestExpiry(until);
+  }
+
+  DateTime? get _regularExpiry =>
+      _c.regularAccessUntil ?? (_c.testAccessUntil == null ? _c.accessUntil : null);
+
+  Future<void> _shorten() async {
+    final regular = _regularExpiry;
+    if (regular == null) return;
+    final until = await _pickExpiry(
+      initial: regular.subtract(const Duration(days: 1)),
+      firstDate: DateTime(regular.year - 5),
+      lastDate: DateUtils.dateOnly(regular),
+    );
+    if (until == null || !mounted) return;
+    if (!until.isBefore(regular)) {
+      _toast(context.t('plan.earlierRequired'));
+      return;
+    }
+
+    final body = [
+      context.t('plan.shortenBody', {
+        'name': _c.displayName, 'from': formatDateTime(regular), 'to': formatDateTime(until),
+      }),
+      if (!until.isAfter(DateTime.now())) context.t('plan.shortenImmediate'),
+      if (_c.testAccessUntil != null) context.t('plan.shortenTestOverride'),
+    ].join('\n\n');
+    if (!await _confirm(context.t('plan.shortenTitle'), body, context.t('plan.shorten')) || !mounted) return;
+
+    try {
+      final result = await context.read<ApiClient>().post(
+        '/v1/admin/clients/${_c.id}/shorten', {'accessUntil': until.toUtc().toIso8601String()},
+      ) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _c = ClientAccount.fromJson(result));
+      _changed = true;
+      _toast(context.t('plan.shortened', {'date': formatDateTime(_regularExpiry ?? until)}));
+    } catch (e) {
+      if (mounted) {
+        _toast(e is ApiException && e.code == 'EXPIRY_NOT_EARLIER'
+            ? context.t('plan.earlierRequired')
+            : describeError(e));
+      }
+    }
+  }
+
+  Future<void> _setTestExpiry(DateTime? until) async {
+    try {
+      final result = await context.read<ApiClient>().patch(
+        '/v1/admin/clients/${_c.id}/test-expiry',
+        {'accessUntil': until?.toUtc().toIso8601String()},
+      ) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _c = ClientAccount.fromJson(result));
+      _changed = true;
     } catch (e) {
       if (mounted) _toast(describeError(e));
     }
@@ -174,6 +258,28 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                 Expanded(child: FilledButton.tonal(onPressed: () => _extend('pro'), child: Text(context.t('plan.addPro')))),
               ]),
             ),
+            if (_regularExpiry != null)
+              ListTile(
+                leading: const Icon(Icons.event_busy_outlined),
+                title: Text(context.t('plan.shorten')),
+                onTap: _shorten,
+              ),
+            if (_c.testExpiryEnabled)
+              ListTile(
+                leading: const Icon(Icons.science_outlined),
+                title: Text(context.t('plan.testExpiry')),
+                subtitle: _c.testAccessUntil == null
+                    ? null
+                    : Text(context.t('plan.regularExpiry', {
+                        'date': _c.regularAccessUntil == null ? '—' : formatDateTime(_c.regularAccessUntil!),
+                      })),
+                trailing: _c.testAccessUntil == null ? null : IconButton(
+                  icon: const Icon(Icons.restore),
+                  tooltip: context.t('plan.restoreExpiry'),
+                  onPressed: () => _setTestExpiry(null),
+                ),
+                onTap: _chooseTestExpiry,
+              ),
             ListTile(
               title: Text(context.t('detail.loginCode')),
               subtitle: Text(code == null ? context.t('detail.noneWaiting') : context.t('detail.waiting', {'time': formatDateTime(code)})),

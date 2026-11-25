@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE clients ADD COLUMN test_access_until TIMESTAMPTZ;
+
+COMMIT;

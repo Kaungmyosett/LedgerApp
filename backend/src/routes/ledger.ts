@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { recordDiagnostic } from '../diagnostics.js';
 import { applyBatch, syncBodySchema } from '../ledger/ops.js';
 import { loadSnapshot } from '../ledger/snapshot.js';
 import { asyncHandler } from '../middleware/errors.js';
@@ -21,6 +22,12 @@ ledgerRouter.post(
   '/sync',
   asyncHandler(async (req, res) => {
     const { ops } = syncBodySchema.parse(req.body);
-    res.json({ results: await applyBatch(req.auth!.id, ops) });
+    const clientId = req.auth!.id;
+    const results = await applyBatch(clientId, ops);
+    const codes = new Set(results.filter((result) => result.status === 'error').map((result) => result.code));
+    for (const code of [...codes].slice(0, 10)) {
+      if (code) recordDiagnostic({ category: 'client', source: 'server', operation: '/v1/client/ledger/sync', code, clientId });
+    }
+    res.json({ results });
   })
 );

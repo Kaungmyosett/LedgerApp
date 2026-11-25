@@ -8,6 +8,7 @@ import '../i18n/lang.dart';
 import '../models/client_account.dart';
 import '../util/format.dart';
 import '../util/server_url.dart';
+import 'admin_logs_screen.dart';
 import 'change_password_dialog.dart';
 import 'client_detail_screen.dart';
 import 'client_form_screen.dart';
@@ -65,6 +66,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       appBar: AppBar(
         title: Text(context.t('admin.clients', {'name': auth.displayName})),
         actions: [
+          IconButton(
+            tooltip: context.t('logs.title'),
+            icon: const Icon(Icons.monitor_heart_outlined),
+            onPressed: () => Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const AdminLogsScreen())),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'pw') showChangePasswordDialog(context);
@@ -138,7 +144,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         itemBuilder: (_, i) {
           final c = _clients[i];
           return ListTile(
-            enabled: c.isActive,
             leading: CircleAvatar(child: Text(c.displayName.characters.first.toUpperCase())),
             title: Text(c.displayName),
             subtitle: Text.rich(TextSpan(children: [

@@ -13,22 +13,28 @@ class Line {
 List<Line> _lines(Object? v) =>
     ((v ?? const []) as List).map((x) => Line.fromJson(x as Map<String, dynamic>)).toList();
 
+enum SettlementSchedule { daily, weekly }
+
 class LUser {
-  const LUser({required this.id, required this.name, required this.username, required this.commissionPercent, required this.odd, this.payment});
+  const LUser({required this.id, required this.name, required this.username, required this.commissionPercent, required this.odd, this.payment, this.settlementSchedule = SettlementSchedule.daily, this.hasFinalizedVouchers = false});
   final String id;
   final String name;
   final String username;
   final double commissionPercent;
   final double odd;
   final double? payment;
+  final SettlementSchedule settlementSchedule;
+  final bool hasFinalizedVouchers;
 
-  LUser copyWith({String? name, String? username, double? commissionPercent, double? odd, double? payment, bool clearPayment = false}) => LUser(
+  LUser copyWith({String? name, String? username, double? commissionPercent, double? odd, double? payment, bool clearPayment = false, bool? hasFinalizedVouchers}) => LUser(
         id: id,
         name: name ?? this.name,
         username: username ?? this.username,
         commissionPercent: commissionPercent ?? this.commissionPercent,
         odd: odd ?? this.odd,
         payment: clearPayment ? null : (payment ?? this.payment),
+        settlementSchedule: settlementSchedule,
+        hasFinalizedVouchers: hasFinalizedVouchers ?? this.hasFinalizedVouchers,
       );
 
   factory LUser.fromJson(Map<String, dynamic> j) => LUser(
@@ -38,23 +44,28 @@ class LUser {
         commissionPercent: _d(j['commissionPercent']),
         odd: _d(j['odd']),
         payment: j['payment'] == null ? null : _d(j['payment']),
+        hasFinalizedVouchers: j['hasFinalizedVouchers'] == true,
+        settlementSchedule: j['settlementSchedule'] == 'weekly'
+            ? SettlementSchedule.weekly
+            : SettlementSchedule.daily,
       );
   Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'username': username, 'commissionPercent': commissionPercent, 'odd': odd, 'payment': payment};
+      {'id': id, 'name': name, 'username': username, 'commissionPercent': commissionPercent, 'odd': odd, 'payment': payment, 'settlementSchedule': settlementSchedule.name, 'hasFinalizedVouchers': hasFinalizedVouchers};
 }
 
 class LEntry {
-  const LEntry({required this.id, required this.userId, required this.code, required this.mode, required this.date, required this.createdAt, required this.lines});
+  const LEntry({required this.id, required this.userId, required this.code, required this.mode, required this.date, required this.createdAt, required this.lines, this.session});
   final String id;
   final String userId;
   final String code;
   final String mode; // 'format' | 'manual'
   final String date; // YYYY-MM-DD
   final String createdAt;
+  final String? session;
   final List<Line> lines;
 
   double get total => lines.fold(0.0, (a, x) => a + x.amount);
-  LEntry withLines(List<Line> l) => LEntry(id: id, userId: userId, code: code, mode: mode, date: date, createdAt: createdAt, lines: l);
+  LEntry withLines(List<Line> l) => LEntry(id: id, userId: userId, code: code, mode: mode, date: date, createdAt: createdAt, lines: l, session: session);
 
   factory LEntry.fromJson(Map<String, dynamic> j) => LEntry(
         id: j['id'] as String,
@@ -63,10 +74,11 @@ class LEntry {
         mode: (j['mode'] ?? 'manual') as String,
         date: j['date'] as String,
         createdAt: (j['createdAt'] ?? '') as String,
+        session: j['session'] as String?,
         lines: _lines(j['lines']),
       );
   Map<String, dynamic> toJson() => {
-        'id': id, 'userId': userId, 'code': code, 'mode': mode, 'date': date, 'createdAt': createdAt,
+        'id': id, 'userId': userId, 'code': code, 'mode': mode, 'date': date, 'createdAt': createdAt, 'session': session,
         'lines': lines.map((x) => x.toJson()).toList(),
       };
 }
@@ -85,7 +97,7 @@ class LDraw {
 class LCover {
   const LCover({
     required this.id, required this.code, required this.seq, required this.requestedAmount, required this.coverListTotal,
-    required this.date, required this.createdAt, required this.allocations, required this.remainingLines,
+    required this.date, required this.createdAt, required this.allocations, required this.remainingLines, this.session,
   });
   final String id;
   final String code;
@@ -94,6 +106,7 @@ class LCover {
   final double coverListTotal;
   final String date;
   final String createdAt;
+  final String? session;
   final List<Line> allocations;
   final List<Line> remainingLines;
 
@@ -105,12 +118,13 @@ class LCover {
         coverListTotal: _d(j['coverListTotal']),
         date: (j['date'] ?? '') as String,
         createdAt: (j['createdAt'] ?? '') as String,
+        session: j['session'] as String?,
         allocations: _lines(j['allocations']),
         remainingLines: _lines(j['remainingLines']),
       );
   Map<String, dynamic> toJson() => {
         'id': id, 'code': code, 'seq': seq, 'requestedAmount': requestedAmount, 'coverListTotal': coverListTotal,
-        'date': date, 'createdAt': createdAt,
+        'date': date, 'createdAt': createdAt, 'session': session,
         'allocations': allocations.map((x) => x.toJson()).toList(),
         'remainingLines': remainingLines.map((x) => x.toJson()).toList(),
       };
@@ -154,26 +168,55 @@ class LDebtEntry {
     required this.kind,
     required this.amount,
     required this.createdAt,
+    this.session,
   });
 
   final String id, userId, userName, date, kind, createdAt;
   final double amount;
+  final String? session;
 
-  int get changeCents => (amount * 100).round() * (kind == 'debt' ? 1 : -1);
+  int get changeCents => (amount * 100).round() * (kind == 'repayment' ? -1 : 1);
 
-  factory LDebtEntry.fromJson(Map<String, dynamic> json) => LDebtEntry(
-    id: json['id'] as String,
-    userId: json['userId'] as String,
-    userName: json['userName'] as String,
-    date: json['date'] as String,
-    kind: json['kind'] as String,
-    amount: _d(json['amount']),
-    createdAt: json['createdAt'] as String,
-  );
+  factory LDebtEntry.fromJson(Map<String, dynamic> json) {
+    final session = json['session'] as String?;
+    final kind = json['kind'] as String;
+    final amount = _d(json['amount']);
+    return LDebtEntry(
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      userName: json['userName'] as String,
+      date: json['date'] as String,
+      kind: session == null ? kind : 'settlement',
+      amount: session != null && kind == 'repayment' ? -amount : amount,
+      createdAt: json['createdAt'] as String,
+      session: session,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id, 'userId': userId, 'userName': userName, 'date': date,
-    'kind': kind, 'amount': amount, 'createdAt': createdAt,
+    'kind': kind, 'amount': amount, 'createdAt': createdAt, 'session': session,
+  };
+}
+
+class LBlockedLine {
+  const LBlockedLine({
+    required this.opId, required this.userId, required this.userName,
+    required this.num, required this.amount, required this.createdAt,
+  });
+
+  final String opId, userId, userName, num, createdAt;
+  final double amount;
+
+  factory LBlockedLine.fromJson(Map<String, dynamic> json) => LBlockedLine(
+    opId: json['opId'] as String, userId: json['userId'] as String,
+    userName: json['userName'] as String, num: json['num'] as String,
+    amount: _d(json['amount']), createdAt: json['createdAt'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'opId': opId, 'userId': userId, 'userName': userName, 'num': num,
+    'amount': amount, 'createdAt': createdAt,
   };
 }
 
@@ -182,14 +225,15 @@ class LedgerData {
   LedgerData({
     List<LUser>? users, List<LEntry>? entries, List<String>? blockedNumbers, List<LDraw>? drawResults,
     List<LCover>? coverVouchers, List<LFinal>? finalizedRecords,
-    List<LDebtEntry>? debtEntries, this.serverTime = '',
+    List<LDebtEntry>? debtEntries, List<LBlockedLine>? blockedLog, this.serverTime = '',
   })  : users = users ?? [],
         entries = entries ?? [],
         blockedNumbers = blockedNumbers ?? [],
         drawResults = drawResults ?? [],
         coverVouchers = coverVouchers ?? [],
         finalizedRecords = finalizedRecords ?? [],
-        debtEntries = debtEntries ?? [];
+        debtEntries = debtEntries ?? [],
+        blockedLog = blockedLog ?? [];
 
   List<LUser> users;
   List<LEntry> entries;
@@ -198,7 +242,18 @@ class LedgerData {
   List<LCover> coverVouchers;
   List<LFinal> finalizedRecords;
   List<LDebtEntry> debtEntries;
+  List<LBlockedLine> blockedLog;
   String serverTime;
+
+  /// Outstanding balances by account, in cents. A negative balance is owed by the dealer.
+  Map<String, int> get debtBalances {
+    final balances = <String, int>{};
+    for (final entry in debtEntries) {
+      balances.update(entry.userId, (total) => total + entry.changeCents,
+          ifAbsent: () => entry.changeCents);
+    }
+    return balances;
+  }
 
   factory LedgerData.fromJson(Map<String, dynamic> j) {
     List<T> list<T>(String k, T Function(Map<String, dynamic>) f) =>
@@ -211,6 +266,7 @@ class LedgerData {
       coverVouchers: list('coverVouchers', LCover.fromJson),
       finalizedRecords: list('finalizedRecords', LFinal.fromJson),
       debtEntries: list('debtEntries', LDebtEntry.fromJson),
+      blockedLog: list('blockedLog', LBlockedLine.fromJson),
       serverTime: (j['serverTime'] ?? '') as String,
     );
   }
@@ -223,6 +279,7 @@ class LedgerData {
         'drawResults': drawResults.map((x) => x.toJson()).toList(),
         'coverVouchers': coverVouchers.map((x) => x.toJson()).toList(),
         'debtEntries': debtEntries.map((x) => x.toJson()).toList(),
+        'blockedLog': blockedLog.map((x) => x.toJson()).toList(),
         'finalizedRecords': finalizedRecords.map((x) => x.toJson()).toList(),
       };
 

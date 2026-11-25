@@ -39,11 +39,13 @@ android {
             dimension = "app"
             applicationIdSuffix = ".client"
             resValue("string", "app_name", "2D Ledger")
+            resValue("string", "preview_app_name", "2D Ledger Preview")
         }
         create("admin") {
             dimension = "app"
             applicationIdSuffix = ".admin"
             resValue("string", "app_name", "2D Ledger Admin")
+            resValue("string", "preview_app_name", "2D Ledger Admin Preview")
         }
     }
 
@@ -51,7 +53,7 @@ android {
         debug {
             if (providers.environmentVariable("LEDGER_LOCAL_PREVIEW").orNull == "true") {
                 applicationIdSuffix = ".preview"
-                resValue("string", "app_name", "2D Ledger Preview")
+                resValue("string", "app_name", "@string/preview_app_name")
             }
         }
         release {

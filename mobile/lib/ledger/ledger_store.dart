@@ -169,14 +169,20 @@ class LedgerStore extends ChangeNotifier {
 
   // ------------------------------------------------------------------ changes
   /// Validates, applies, saves and queues an operation. Throws [LedgerRule] (and changes nothing) when the rules refuse it.
-  Future<void> run(Op op) async {
+  Future<void> run(Op op) => runAll([op]);
+
+  /// Validates the whole selection before updating the local copy and sync queue.
+  Future<void> runAll(List<Op> ops) async {
+    if (ops.isEmpty) return;
     final lock = lockReason();
     if (lock != null) throw LedgerRule(lock, 'Changes are blocked: $lock');
     _touchClock();
     final d = data.copy();
-    applyOpLocally(d, op); // may throw LedgerRule
+    for (final op in ops) {
+      applyOpLocally(d, op); // may throw LedgerRule
+    }
     data = d;
-    _queue.add(op);
+    _queue.addAll(ops);
     _notify();
     await _save();
     unawaited(sync());

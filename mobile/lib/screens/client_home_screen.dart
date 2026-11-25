@@ -159,6 +159,8 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
                         showBlockedNumbers(context);
                       case 'finalize':
                         showFinalize(context);
+                      case 'blockedLog':
+                        showBlockedLog(context);
                       case 'lang':
                         context.lang.toggle();
                       case 'server':
@@ -171,6 +173,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with WidgetsBinding
                     PopupMenuItem(value: 'draw', child: Text(context.t('menu.draws'))),
                     PopupMenuItem(value: 'blocked', child: Text(context.t('menu.blocked'))),
                     PopupMenuItem(value: 'finalize', child: Text(context.t('menu.finalize'))),
+                    PopupMenuItem(value: 'blockedLog', child: Text(context.t('menu.blockedLog'))),
                     const PopupMenuDivider(),
                     PopupMenuItem(value: 'lang', child: Text(context.t('common.language'))),
                     PopupMenuItem(value: 'server', child: Text(context.t('server.title'))),

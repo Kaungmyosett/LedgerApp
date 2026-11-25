@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../i18n/lang.dart';
+import '../../ledger/draw_period.dart';
 import '../../ledger/ledger_store.dart';
 import '../../ledger/logic.dart';
 import '../../ledger/models.dart';
@@ -9,23 +10,54 @@ import '../../ledger/ops.dart';
 import 'common.dart';
 
 class BetsTab extends StatefulWidget {
-  const BetsTab({super.key});
+  const BetsTab({super.key}) : user = null, period = null;
+  const BetsTab.forUser({super.key, required LUser user, required DrawPeriod period})
+      : user = user, period = period;
+
+  final LUser? user;
+  final DrawPeriod? period;
   @override
   State<BetsTab> createState() => _BetsTabState();
 }
 
 class _BetsTabState extends State<BetsTab> {
   String? _userFilter;
+  bool _selecting = false;
+  final _selected = <String>{};
+
+  void _toggle(String id) => setState(() {
+    if (!_selected.remove(id)) _selected.add(id);
+  });
+
+  Future<void> _delete(List<LEntry> entries) async {
+    final single = entries.length == 1;
+    final deleted = await deleteVouchers(
+      context, context.read<LedgerStore>(),
+      [for (final entry in entries) Ops.entryDelete(entry.id)],
+      title: context.t(single ? 'bets.deleteTitle' : 'vouchers.deleteTitle'),
+      body: context.t(single ? 'bets.deleteBody' : 'vouchers.deleteBody', {'n': entries.length}),
+    );
+    if (deleted && mounted) setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<LedgerStore>();
     final d = store.data;
     final names = {for (final u in d.users) u.id: u.name};
-    final list = d.entries.where((e) => _userFilter == null || e.userId == _userFilter).toList().reversed.toList();
+    final user = widget.user;
+    final period = widget.period;
+    final filter = user?.id ?? _userFilter;
+    final list = (period == null ? d.entries : d.entriesFor(period))
+        .where((e) => filter == null || e.userId == filter).toList().reversed.toList();
+    final selected = list.where((entry) => _selected.contains(entry.id)).toList();
     return Scaffold(
+      appBar: user == null ? null : AppBar(title: Text('${user.name} · ${context.t('tab.bets')}')),
       body: Column(children: [
-        if (d.users.isNotEmpty)
+        if (user == null && d.users.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: DropdownButtonFormField<String?>(
@@ -37,6 +69,17 @@ class _BetsTabState extends State<BetsTab> {
               ],
               onChanged: (v) => setState(() => _userFilter = v),
             ),
+          ),
+        if (period != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('${period.date} · ${sessionLabel(context, period.session)}'),
+          ),
+        if (user != null && (list.length > 1 || _selecting))
+          VoucherSelectionBar(
+            selecting: _selecting, count: selected.length,
+            toggle: () => setState(() { _selecting = !_selecting; _selected.clear(); }),
+            delete: () => _delete(selected),
           ),
         Expanded(
           child: list.isEmpty
@@ -50,26 +93,24 @@ class _BetsTabState extends State<BetsTab> {
                     return ListTile(
                       title: Text('${e.code.isEmpty ? '—' : e.code} · ${names[e.userId] ?? context.t('common.unknown')}'),
                       subtitle: Text(context.t('bets.sub', {'date': e.date, 'n': e.lines.length, 'mode': context.t(e.mode == 'format' ? 'bets.format' : 'bets.manual')})),
-                      trailing: Text(money(e.total), style: const TextStyle(fontWeight: FontWeight.bold)),
-                      onTap: () => Navigator.of(ctx).push(MaterialPageRoute<void>(
-                        builder: (_) => ChangeNotifierProvider<LedgerStore>.value(value: store, child: EntryScreen(existing: e)),
+                      leading: _selecting ? Checkbox(
+                        value: _selected.contains(e.id), onChanged: (_) => _toggle(e.id),
+                      ) : null,
+                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(money(e.total), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        if (!_selecting) IconButton(
+                          tooltip: context.t('common.delete'), icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _delete([e]),
+                        ),
+                      ]),
+                      onTap: _selecting ? () => _toggle(e.id) : () => Navigator.of(ctx).push(MaterialPageRoute<void>(
+                        builder: (_) => ChangeNotifierProvider<LedgerStore>.value(value: store, child: EntryScreen.edit(existing: e)),
                       )),
                     );
                   },
                 ),
         ),
       ]),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'addVoucher',
-        onPressed: () {
-          if (d.users.isEmpty) return toast(context, context.t('bets.needUser'));
-          Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => ChangeNotifierProvider<LedgerStore>.value(value: store, child: const EntryScreen()),
-          ));
-        },
-        icon: const Icon(Icons.add),
-        label: Text(context.t('bets.add')),
-      ),
     );
   }
 }
@@ -135,16 +176,20 @@ List<Line> _merge(List<Line> l) {
 
 /// New voucher (Format text or manual rows) or edit/delete an existing one (rows).
 class EntryScreen extends StatefulWidget {
-  const EntryScreen({super.key, this.existing, this.userId});
+  const EntryScreen.create({super.key, required String userId, this.period})
+      : userId = userId, existing = null;
+  const EntryScreen.edit({super.key, required LEntry existing})
+      : existing = existing, userId = null, period = null;
   final LEntry? existing;
+  final DrawPeriod? period;
   final String? userId;
   @override
   State<EntryScreen> createState() => _EntryScreenState();
 }
 
 class _EntryScreenState extends State<EntryScreen> {
-  late String _userId;
-  late String _date;
+  String get _userId => widget.existing?.userId ?? widget.userId!;
+  late String _date, _session;
   late bool _formatMode;
   final _format = TextEditingController();
   final List<_Row> _rows = [];
@@ -157,10 +202,11 @@ class _EntryScreenState extends State<EntryScreen> {
   @override
   void initState() {
     super.initState();
-    final d = context.read<LedgerStore>().data;
     final e = widget.existing;
-    _userId = e?.userId ?? widget.userId ?? d.users.first.id;
-    _date = e?.date ?? today();
+    final initial = widget.period ?? drawPeriodAt(DateTime.now());
+    _date = e?.date ?? initial.date;
+    final legacyTime = DateTime.tryParse(e?.createdAt ?? '');
+    _session = e?.session ?? (legacyTime == null ? initial.session : legacyDrawSession(legacyTime));
     _formatMode = e == null;
     if (e != null) {
       for (final l in e.lines) {
@@ -221,30 +267,25 @@ class _EntryScreenState extends State<EntryScreen> {
     final lines = _collect();
     if (lines == null) return setState(() {});
     final store = context.read<LedgerStore>();
-    final blocked = lines.where((l) => store.data.blockedNumbers.contains(l.num)).map((l) => l.num).toSet();
-    if (!_editing && blocked.isNotEmpty) {
-      return setState(() => _error = context.t('bets.errBlocked', {'n': blocked.join(', ')}));
-    }
+    final removed = lines.where((line) => store.data.blockedNumbers.contains(line.num)).toList();
     setState(() => _busy = true);
     try {
       if (_editing) {
         await store.run(Ops.entryUpdate(widget.existing!.id, lines));
       } else {
         await store.run(Ops.entryCreate(LEntry(
-          id: newUuid(), userId: _userId, code: newVoucherCode('V'), mode: _formatMode ? 'format' : 'manual', date: _date,
+          id: newUuid(), userId: _userId, code: newVoucherCode('V'), mode: _formatMode ? 'format' : 'manual', date: _date, session: _session,
           createdAt: DateTime.now().toUtc().toIso8601String(), lines: lines)));
       }
-      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      if (removed.isNotEmpty) {
+        final label = removed.length == lines.length ? 'bets.allBlocked' : 'bets.blockedRemoved';
+        toast(context, context.t(label, {'v': money(removed.fold(0.0, (sum, line) => sum + line.amount))}));
+      }
+      Navigator.pop(context);
     } on LedgerRule catch (e) {
       if (mounted) setState(() { _error = trRule(context, e.code, e.message); _busy = false; });
     }
-  }
-
-  Future<void> _delete() async {
-    final ok = await confirmDialog(context, context.t('bets.deleteTitle'), context.t('bets.deleteBody'), context.t('common.delete'), danger: true);
-    if (!ok || !mounted) return;
-    if (!await runOrToast(context, context.read<LedgerStore>(), Ops.entryDelete(widget.existing!.id))) return;
-    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -253,15 +294,15 @@ class _EntryScreenState extends State<EntryScreen> {
     final preview = (_formatMode && !_editing) ? parseFormat(_format.text) : null;
     // Manual rows: expand R / PP / ... for the preview and the total (invalid rows count as nothing).
     final manual = (_formatMode && !_editing) ? const <Line>[] : _merge([for (final r in _rows) ...?_rowLines(r, (_) {}, context.t)]);
-    final total = (_formatMode && !_editing)
-        ? preview!.result.fold(0.0, (a, x) => a + x.amount)
-        : manual.fold(0.0, (a, x) => a + x.amount);
+    final proposed = (_formatMode && !_editing) ? preview!.result : manual;
+    final blocked = d.blockedNumbers.toSet();
+    final removed = proposed.where((line) => blocked.contains(line.num)).toList();
+    final shown = proposed.where((line) => !blocked.contains(line.num)).toList();
+    final total = shown.fold(0.0, (sum, line) => sum + line.amount);
     final cs = Theme.of(context).colorScheme;
-    final shown = (_formatMode && !_editing) ? preview!.result : manual;
     return Scaffold(
       appBar: AppBar(
         title: Text(_editing ? context.t('bets.voucher', {'code': widget.existing!.code}) : context.t('bets.new')),
-        actions: [if (_editing) IconButton(icon: const Icon(Icons.delete_outline), onPressed: _delete)],
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 24), children: [
         // --- who / when / how
@@ -272,12 +313,18 @@ class _EntryScreenState extends State<EntryScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Row(children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: d.users.any((u) => u.id == _userId) ? _userId : null,
-                    isExpanded: true,
-                    decoration: InputDecoration(labelText: context.t('bets.user'), prefixIcon: const Icon(Icons.person_outline), border: const OutlineInputBorder(), isDense: true),
-                    items: d.users.map((u) => DropdownMenuItem(value: u.id, child: Text(u.name, overflow: TextOverflow.ellipsis))).toList(),
-                    onChanged: _editing ? null : (v) => setState(() => _userId = v ?? _userId),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: context.t('bets.user'),
+                      prefixIcon: const Icon(Icons.person_outline),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    child: Text(
+                      d.users.where((user) => user.id == _userId).firstOrNull?.name ??
+                          context.t('common.unknown'),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -293,6 +340,17 @@ class _EntryScreenState extends State<EntryScreen> {
                         },
                 ),
               ]),
+              DropdownButton<String>(
+                value: _session,
+                isExpanded: true,
+                items: [
+                  for (final session in ['morning', 'evening'])
+                    DropdownMenuItem(value: session, child: Text(sessionLabel(context, session))),
+                ],
+                onChanged: _editing ? null : (session) {
+                  if (session != null) setState(() => _session = session);
+                },
+              ),
               if (!_editing) ...[
                 const SizedBox(height: 12),
                 SegmentedButton<bool>(
@@ -347,6 +405,11 @@ class _EntryScreenState extends State<EntryScreen> {
             label: Text(context.t('bets.addRow')),
           ),
         ],
+        if (removed.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(context.t('bets.removedTitle'), style: TextStyle(color: cs.error, fontWeight: FontWeight.bold)),
+          for (final line in removed) KV(line.num, money(line.amount), color: cs.error),
+        ],
         // --- what will be saved
         if (shown.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -359,7 +422,7 @@ class _EntryScreenState extends State<EntryScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: d.blockedNumbers.contains(l.num) ? cs.errorContainer : cs.secondaryContainer,
+                  color: cs.secondaryContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text.rich(TextSpan(children: [

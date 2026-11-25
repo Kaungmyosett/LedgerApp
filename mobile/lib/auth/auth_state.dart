@@ -36,6 +36,11 @@ class AuthState extends ChangeNotifier {
       } catch (_) {}
       status = AuthStatus.signedOut;
     }
+    api.setDiagnosticRole(switch (status) {
+      AuthStatus.admin => 'admin',
+      AuthStatus.client => 'client',
+      _ => null,
+    });
     notifyListeners();
   }
 
@@ -52,6 +57,7 @@ class AuthState extends ChangeNotifier {
     displayName = (data['account'] as Map<String, dynamic>)['displayName'] as String;
     await api.store.saveProfile(role, displayName, owner: identifier.trim().toLowerCase());
     status = role == 'admin' ? AuthStatus.admin : AuthStatus.client;
+    api.setDiagnosticRole(role);
     notifyListeners();
   }
 
@@ -71,6 +77,7 @@ class AuthState extends ChangeNotifier {
     // Leave the signed-in screens first so they stop calling the server.
     displayName = '';
     status = AuthStatus.signedOut;
+    api.setDiagnosticRole(null);
     notifyListeners();
     // Clear before talking to the server, so a quick new login can't be wiped afterwards.
     try {

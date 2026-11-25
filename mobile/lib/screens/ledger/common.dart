@@ -66,20 +66,35 @@ Future<String?> pickDate(BuildContext context, String current) async {
 }
 
 class KV extends StatelessWidget {
-  const KV(this.k, this.v, {super.key, this.bold = false, this.color});
+  const KV(this.k, this.v, {super.key, this.bold = false, this.color, this.valueDetail});
   final String k;
   final String v;
+  final String? valueDetail;
   final bool bold;
   final Color? color;
   @override
   Widget build(BuildContext context) {
     final st = TextStyle(fontWeight: bold ? FontWeight.bold : null, color: color);
+    final detail = valueDetail;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        Expanded(child: Text(k)),
-        Text(v, style: st),
-      ]),
+      child: Row(
+        crossAxisAlignment: detail == null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 3, child: Text(k)),
+          const SizedBox(width: 8),
+          if (detail == null)
+            Text(v, style: st)
+          else
+            Expanded(flex: 2, child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(v, textAlign: TextAlign.end, style: st),
+                Text(detail, textAlign: TextAlign.end, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            )),
+        ],
+      ),
     );
   }
 }
@@ -95,3 +110,58 @@ Future<bool> runOrToast(BuildContext context, LedgerStore store, Op op) async {
     return false;
   }
 }
+
+/// Queues a confirmed voucher selection through the normal offline sync path.
+Future<bool> deleteVouchers(
+  BuildContext context,
+  LedgerStore store,
+  List<Op> ops, {
+  required String title,
+  required String body,
+}) async {
+  if (ops.isEmpty) return false;
+  final confirmed = await confirmDialog(context, title, body, context.t('common.delete'), danger: true);
+  if (!confirmed || !context.mounted) return false;
+  try {
+    await store.runAll(ops);
+    return true;
+  } on LedgerRule catch (e) {
+    if (context.mounted) toast(context, trRule(context, e.code, e.message));
+    return false;
+  }
+}
+
+class VoucherSelectionBar extends StatelessWidget {
+  const VoucherSelectionBar({
+    super.key, required this.selecting, required this.count,
+    required this.toggle, required this.delete,
+  });
+
+  final bool selecting;
+  final int count;
+  final VoidCallback toggle, delete;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Wrap(spacing: 8, children: [
+      TextButton.icon(
+        icon: Icon(selecting ? Icons.close : Icons.checklist),
+        label: Text(context.t(selecting ? 'common.cancel' : 'vouchers.select')),
+        onPressed: toggle,
+      ),
+      if (selecting)
+        TextButton.icon(
+          icon: const Icon(Icons.delete_outline),
+          label: Text(context.t('vouchers.deleteSelected', {'n': count})),
+          onPressed: count == 0 ? null : delete,
+        ),
+    ]),
+  );
+}
+
+String payoutFormula(double stake, double odd) => '${money(stake)} × ${money(odd)}';
+
+Widget payoutRow(BuildContext context, double amount, double stake, double odd, {bool bold = false, Color? color}) =>
+    KV(context.t('money.payout'), money(amount), bold: bold, color: color,
+        valueDetail: '(${payoutFormula(stake, odd)})');

@@ -30,7 +30,7 @@ void main() {
       LDraw(date: '2026-11-25', session: 'morning', number: '25'),
     ], entries: [
       LEntry(id: 'entry', userId: 'a', code: '', mode: 'manual',
-          date: '2026-11-25', createdAt: morning.toUtc().toIso8601String(),
+          date: '2026-11-25', createdAt: morning.toUtc().toIso8601String(), session: 'morning',
           lines: const [Line('00', 1000)]),
     ]);
     expect(nextDrawPeriod(morning), evening);
@@ -56,6 +56,43 @@ void main() {
     expect(shares['a'], (eaten: 0.34, covered: 3.0));
     expect(shares['b'], (eaten: 0.33, covered: 0.0));
     expect(shares['c'], (eaten: 0.33, covered: 0.0));
+  });
+
+  test('only weekly users post signed debt when a draw is finalized', () {
+    const morningId = 'weekly-morning', eveningId = 'weekly-evening';
+    const date = '2026-11-25';
+    const weekly = LUser(id: 'w', name: 'Weekly', username: 'weekly',
+        commissionPercent: 10, odd: 80, settlementSchedule: SettlementSchedule.weekly);
+    const daily = LUser(id: 'd', name: 'Daily', username: 'daily',
+        commissionPercent: 10, odd: 80);
+    LEntry entry(LUser user, String number, double amount, {String session = 'morning'}) => LEntry(
+        id: 'voucher-${user.id}-$session', userId: user.id, code: '', mode: 'manual',
+        date: date, createdAt: '', session: session, lines: [Line(number, amount)]);
+    final data = LedgerData(users: [weekly, daily], entries: [
+      entry(weekly, '00', 1000), entry(daily, '00', 500),
+      entry(weekly, '25', 100, session: 'evening'),
+    ], drawResults: [
+      const LDraw(date: date, session: 'morning', number: '57'),
+      const LDraw(date: date, session: 'evening', number: '25'),
+    ]);
+    applyOpLocally(data, Ops.finalize(date, 'morning', {'w': morningId}));
+    expect(data.entries.single.session, 'evening');
+    applyOpLocally(data, Ops.finalize(date, 'evening', {'w': eveningId}));
+
+    final restored = data.copy();
+    expect(restored.users.first.settlementSchedule, SettlementSchedule.weekly);
+    expect(restored.debtEntries.map((entry) => (entry.session, entry.amount)),
+        [('morning', 900.0), ('evening', -7910.0)]);
+    expect(restored.debtBalances, {'w': -701000});
+    final fromSnapshot = LDebtEntry.fromJson({
+      ...restored.debtEntries.last.toJson(),
+      'kind': 'repayment',
+      'amount': 7910,
+    });
+    expect((fromSnapshot.kind, fromSnapshot.session, fromSnapshot.amount),
+        ('settlement', 'evening', -7910.0));
+    applyOpLocally(restored, Ops.finalizedDelete(eveningId));
+    expect(restored.debtBalances, {'w': 90000});
   });
 
   test('a double (00, 11, …) is never charged twice', () {
@@ -150,7 +187,13 @@ void main() {
       // Finalize through the reducer (same path the phone uses) and compare the history rows.
       final fin = s['finalize'];
       if (fin != null) {
-        final data = LedgerData(users: users, entries: entries, drawResults: draws);
+        // The reference fixture models one session's entries per date.
+        final sessionEntries = [
+          for (final entry in entries)
+            LEntry(id: entry.id, userId: entry.userId, code: entry.code, mode: entry.mode,
+                date: entry.date, session: fin['session'] as String, createdAt: entry.createdAt, lines: entry.lines),
+        ];
+        final data = LedgerData(users: users, entries: sessionEntries, drawResults: draws);
         final recs = fin['records'] as List;
         if (recs.isEmpty) {
           // Nobody had a stake on that date: finalize is refused and nothing changes.
@@ -183,12 +226,12 @@ void main() {
   });
 
   test("owner's cover example: eat 1,000 fixed, second voucher lists only changes", () {
-    LEntry e(String id, List<Line> l) => LEntry(id: id, userId: 'u', code: '', mode: 'manual', date: '2026-11-20', createdAt: '', lines: l);
+    LEntry e(String id, List<Line> l) => LEntry(id: id, userId: 'u', code: '', mode: 'manual', date: '2026-11-20', createdAt: '', session: 'morning', lines: l);
     final data = LedgerData(users: [const LUser(id: 'u', name: 'U', username: 'U', commissionPercent: 0, odd: 80)], entries: [e('e1', const [Line('05', 5000)])]);
-    applyOpLocally(data, Ops.coverCreate('c1', 'C1', 1000, '2026-11-20'));
+    applyOpLocally(data, Ops.coverCreate('c1', 'C1', 1000, '2026-11-20', session: 'morning'));
     data.entries.add(e('e2', const [Line('05', 2000), Line('12', 3000)]));
-    expect(() => applyOpLocally(data, Ops.coverCreate('c2', 'C2', 2000, '2026-11-20')), throwsA(isA<LedgerRule>()));
-    applyOpLocally(data, Ops.coverCreate('c3', 'C3', 1000, '2026-11-20'));
+    expect(() => applyOpLocally(data, Ops.coverCreate('c2', 'C2', 2000, '2026-11-20', session: 'morning')), throwsA(isA<LedgerRule>()));
+    applyOpLocally(data, Ops.coverCreate('c3', 'C3', 1000, '2026-11-20', session: 'morning'));
     final v = data.coverVouchers.last;
     expect(v.allocations.map((x) => '${x.num}=${x.amount}'), ['12=1000.0']);
     expect(v.remainingLines.map((x) => '${x.num}=${x.amount}'), ['05=2000.0', '12=2000.0']);

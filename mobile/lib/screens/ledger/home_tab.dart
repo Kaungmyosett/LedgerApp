@@ -20,7 +20,9 @@ class HomeTab extends StatelessWidget {
     final balances = numberBalances([], data.coverVouchers).values;
     final eaten = balances.fold(0.0, (total, balance) => total + balance.covered);
     final cover = balances.fold(0.0, (total, balance) => total + balance.cover);
-    final debt = data.debtEntries.fold(0, (total, entry) => total + entry.changeCents);
+    final debtBalances = data.debtBalances.values;
+    final debt = debtBalances.where((value) => value > 0).fold(0, (sum, value) => sum + value);
+    final payable = debtBalances.where((value) => value < 0).fold(0, (sum, value) => sum - value);
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -42,12 +44,11 @@ class HomeTab extends StatelessWidget {
           child: ListTile(
             leading: const Icon(Icons.account_balance_wallet_outlined),
             title: Text(context.t('tab.debt')),
-            subtitle: Text(context.t('debt.outstanding')),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(money(debt / 100), style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right),
+            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              KV(context.t('debt.outstanding'), money(debt / 100)),
+              if (payable > 0) KV(context.t('debt.payable'), money(payable / 100)),
             ]),
+            trailing: const Icon(Icons.chevron_right),
             onTap: openDebt,
           ),
         ),

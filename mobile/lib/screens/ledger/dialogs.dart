@@ -6,6 +6,7 @@ import '../../ledger/draw_period.dart';
 import '../../ledger/ledger_store.dart';
 import '../../ledger/logic.dart';
 import '../../ledger/ops.dart';
+import '../../util/format.dart';
 import 'common.dart';
 
 Future<void> showBlockedNumbers(BuildContext context) async {
@@ -100,7 +101,7 @@ Future<void> showDrawResults(BuildContext context) async {
   );
 }
 
-/// Finalize one draw: freezes that date's vouchers into history, one record per user.
+/// Finalize one draw: freezes vouchers for its date and session.
 Future<void> showFinalize(BuildContext context) async {
   final store = context.read<LedgerStore>();
   final d = store.data;
@@ -110,9 +111,9 @@ Future<void> showFinalize(BuildContext context) async {
   await showDialog<void>(
     context: context,
     builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
-      final dayEntries = d.entries.where((e) => e.date == pick.date).length;
-      // Only commission users with a stake on that date get a history row.
-      final withStake = d.users.where((u) => d.entries.any((e) => e.date == pick.date && e.userId == u.id && e.total > 0)).length;
+      final entries = d.entriesFor((date: pick.date, session: pick.session));
+      final dayEntries = entries.length;
+      final withStake = d.users.where((u) => entries.any((e) => e.userId == u.id && e.total > 0)).length;
       return AlertDialog(
         title: Text(ctx.t('fin.title')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -123,7 +124,7 @@ Future<void> showFinalize(BuildContext context) async {
             onChanged: (i) => setS(() => pick = open[i ?? 0]),
           ),
           const SizedBox(height: 8),
-          Text(ctx.t('fin.body', {'n': pick.number, 'u': withStake, 'date': pick.date, 'v': dayEntries})),
+          Text(ctx.t('fin.body', {'n': pick.number, 'u': withStake, 'date': '${pick.date} · ${sessionLabel(ctx, pick.session)}', 'v': dayEntries})),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(ctx.t('common.cancel'))),
@@ -143,4 +144,52 @@ Future<void> showFinalize(BuildContext context) async {
       );
     }),
   );
+}
+
+Future<void> showBlockedLog(BuildContext context) {
+  final store = context.read<LedgerStore>();
+  return Navigator.of(context).push<void>(MaterialPageRoute(
+    builder: (route) => Scaffold(
+      appBar: AppBar(title: Text(route.t('menu.blockedLog'))),
+      body: ListenableBuilder(
+        listenable: store,
+        builder: (ctx, _) {
+          final rows = [...store.data.blockedLog]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          if (rows.isEmpty) return Center(child: Text(ctx.t('blocked.logEmpty')));
+          return ListView.builder(
+            itemCount: rows.length,
+            itemBuilder: (rowContext, index) {
+              final row = rows[index];
+              final created = DateTime.tryParse(row.createdAt)?.toLocal();
+              return ListTile(
+                key: ValueKey((row.opId, row.num)),
+                title: Text(row.userName),
+                subtitle: Text([
+                  '${rowContext.t('bets.no')} ${row.num} · ${money(row.amount)}',
+                  if (created != null) formatDateTime(created),
+                ].join('\n')),
+                isThreeLine: created != null,
+                trailing: IconButton(
+                  tooltip: rowContext.t('common.delete'),
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    final ok = await confirmDialog(
+                      rowContext,
+                      rowContext.t('blocked.deleteLogTitle'),
+                      rowContext.t('blocked.deleteLogBody', {'name': row.userName, 'n': row.num}),
+                      rowContext.t('common.delete'),
+                      danger: true,
+                    );
+                    if (ok && rowContext.mounted) {
+                      await runOrToast(rowContext, store, Ops.blockedLogDelete(row.opId, row.num));
+                    }
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ),
+  ));
 }

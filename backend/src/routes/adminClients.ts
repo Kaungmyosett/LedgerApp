@@ -15,7 +15,7 @@ export const adminClientsRouter = Router();
 adminClientsRouter.use(requireAuth('admin'));
 
 const SELECT_CLIENT = `
-  SELECT c.id, c.display_name, c.email, c.is_active, c.created_at, c.updated_at, c.last_login_at, c.plan, c.access_until,
+  SELECT c.id, c.display_name, c.email, c.is_active, c.created_at, c.updated_at, c.last_login_at, c.plan, c.access_until, c.test_access_until,
          (SELECT k.expires_at FROM client_login_codes k
            WHERE k.client_id = c.id AND k.used_at IS NULL AND k.revoked_at IS NULL AND k.expires_at > now()
            LIMIT 1) AS login_code_expires_at
@@ -32,6 +32,7 @@ interface ClientRow {
   login_code_expires_at: Date | null;
   plan: 'basic' | 'pro' | null;
   access_until: Date | null;
+  test_access_until: Date | null;
 }
 
 /** basic = 1 month, pro = 3 months. */
@@ -50,7 +51,10 @@ function toDto(r: ClientRow) {
     // Whether a code is waiting to be used. The code itself can never be read back.
     loginCodeExpiresAt: r.login_code_expires_at,
     plan: r.plan,
-    accessUntil: r.access_until
+    accessUntil: config.ENABLE_TEST_EXPIRY_EDIT === 'true' ? r.test_access_until ?? r.access_until : r.access_until,
+    testExpiryEnabled: config.ENABLE_TEST_EXPIRY_EDIT === 'true',
+    testAccessUntil: config.ENABLE_TEST_EXPIRY_EDIT === 'true' ? r.test_access_until : null,
+    regularAccessUntil: r.access_until
   };
 }
 
@@ -319,6 +323,67 @@ adminClientsRouter.post(
       return toDto(after);
     });
     res.json(client);
+  })
+);
+
+// Move the regular expiry earlier while keeping the plan and any test override.
+adminClientsRouter.post(
+  '/:clientId/shorten',
+  asyncHandler(async (req, res) => {
+    const id = idParam.parse(req.params.clientId);
+    const { accessUntil } = z.object({
+      accessUntil: z.string().datetime({ offset: true }).refine((value) => Number.isFinite(Date.parse(value)))
+    }).strict().parse(req.body);
+    const requestedExpiry = new Date(accessUntil);
+    const result = await withTransaction(async (db) => {
+      const before = await loadClient(db, id, true);
+      if (!before) throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found.');
+      if (!before.access_until || requestedExpiry >= before.access_until) {
+        throw new HttpError(409, 'EXPIRY_NOT_EARLIER', 'Choose a date and time earlier than the current regular expiry.');
+      }
+      await db.query('UPDATE clients SET access_until = $2 WHERE id = $1', [id, requestedExpiry]);
+      const after = (await loadClient(db, id))!;
+      await writeAudit(db, {
+        actorType: 'admin',
+        actorId: req.auth!.id,
+        action: 'client.shorten',
+        entityType: 'client',
+        entityId: id,
+        before: { accessUntil: before.access_until },
+        after: { accessUntil: after.access_until }
+      });
+      return toDto(after);
+    });
+    res.json(result);
+  })
+);
+
+// A reversible override for testing plan expiry without changing the paid expiry.
+adminClientsRouter.patch(
+  '/:clientId/test-expiry',
+  asyncHandler(async (req, res) => {
+    if (config.ENABLE_TEST_EXPIRY_EDIT !== 'true') {
+      throw new HttpError(404, 'NOT_FOUND', 'Test expiry editing is disabled.');
+    }
+    const id = idParam.parse(req.params.clientId);
+    const { accessUntil } = z.object({ accessUntil: z.string().datetime({ offset: true }).nullable() }).strict().parse(req.body);
+    const result = await withTransaction(async (db) => {
+      const client = await loadClient(db, id, true);
+      if (!client) throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found.');
+      await db.query('UPDATE clients SET test_access_until = $2 WHERE id = $1', [id, accessUntil]);
+      const updated = (await loadClient(db, id))!;
+      await writeAudit(db, {
+        actorType: 'admin',
+        actorId: req.auth!.id,
+        action: 'client.test_expiry',
+        entityType: 'client',
+        entityId: id,
+        before: { testAccessUntil: client.test_access_until },
+        after: { testAccessUntil: updated.test_access_until }
+      });
+      return toDto(updated);
+    });
+    res.json(result);
   })
 );
 

@@ -7,6 +7,7 @@ import '../../ledger/ledger_store.dart';
 import '../../ledger/models.dart';
 import '../../ledger/ops.dart';
 import 'common.dart';
+import 'weekly_report.dart';
 
 /// Finalized settlements grouped by draw (date + session), newest first.
 /// Each user shows: total stake, payout, commission earned, payment, final total. Each record can be deleted.
@@ -72,11 +73,17 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Widget _week(BuildContext context, List<LFinal> records) {
     final days = List.generate(5, (i) => ledgerDate(_day(_monday, i)));
-    final users = <String, Map<String, List<LFinal>>>{};
-    for (final record in records) {
-      if (!days.contains(record.date)) continue;
-      users.putIfAbsent(record.userId, () => {})
-          .putIfAbsent(record.date, () => []).add(record);
+    final week = records.where((record) => days.contains(record.date)).toList()
+      ..sort((a, b) {
+        final date = b.date.compareTo(a.date);
+        return date == 0 ? a.session.compareTo(b.session) : date;
+      });
+    final users = <String, List<LFinal>>{};
+    final drawsByDate = <String, Map<String, String>>{};
+    for (final record in week) {
+      users.putIfAbsent(record.userId, () => []).add(record);
+      drawsByDate.putIfAbsent(record.date, () => {})
+          .putIfAbsent(record.session, () => record.number);
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
@@ -109,63 +116,27 @@ class _HistoryTabState extends State<HistoryTab> {
             padding: const EdgeInsets.all(20),
             child: Text(context.t('hist.empty'), textAlign: TextAlign.center),
           ),
+        if (week.isNotEmpty)
+          WeeklyReportCard(
+            key: ValueKey((days.first, null)),
+            title: context.t('hist.allTotal'),
+            days: days,
+            records: week,
+            drawsByDate: drawsByDate,
+            showCoverAmounts: true,
+          ),
         for (final user in users.entries)
-          _WeekUser(key: ValueKey('${days.first}/${user.key}'), days: days, records: user.value),
+          WeeklyReportCard(
+            key: ValueKey((days.first, user.key)),
+            title: user.value.first.userName,
+            days: days,
+            records: user.value,
+            drawsByDate: drawsByDate,
+          ),
       ],
     );
   }
 
-}
-
-class _WeekUser extends StatelessWidget {
-  const _WeekUser({super.key, required this.days, required this.records});
-
-  final List<String> days;
-  final Map<String, List<LFinal>> records;
-
-  @override
-  Widget build(BuildContext context) {
-    final all = records.values.expand((rows) => rows).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    return Card(
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        title: Text(all.first.userName),
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: [
-                for (final key in ['hist.date', 'hist.day'])
-                  DataColumn(label: Text(context.t(key))),
-                for (final key in ['money.total', 'money.commission', 'num.totalCover', 'num.totalEaten', 'money.net'])
-                  DataColumn(numeric: true, label: Text(context.t(key))),
-              ],
-              rows: [
-                for (final (index, date) in days.indexed)
-                  _row(date, context.t('hist.weekday${index + 1}'), records[date] ?? const []),
-                _row(context.t('hist.weekTotal'), '', all, emphasized: true),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  DataRow _row(String date, String day, List<LFinal> rows, {bool emphasized = false}) {
-    String sum(double? Function(LFinal) get) {
-      if (rows.isEmpty || rows.any((row) => get(row) == null)) return '—';
-      return money(rows.fold(0.0, (total, row) => total + get(row)!));
-    }
-    return DataRow(cells: [
-      for (final value in [
-        date, day, sum((r) => r.total), sum((r) => r.commission),
-        sum((r) => r.covered), sum((r) => r.eaten), sum((r) => r.net),
-      ])
-        DataCell(Text(value, style: emphasized ? const TextStyle(fontWeight: FontWeight.bold) : null)),
-    ]);
-  }
 }
 
 class _DrawGroup extends StatelessWidget {
@@ -218,15 +189,12 @@ class _DrawGroup extends StatelessWidget {
   }
 }
 
-Widget _row(BuildContext context, String key, double v, {String? note, bool net = false}) {
+Widget _row(BuildContext context, String key, double v, {bool net = false}) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(children: [
       Expanded(
-        child: Text.rich(TextSpan(children: [
-          TextSpan(text: context.t(key), style: TextStyle(fontWeight: net ? FontWeight.bold : null)),
-          if (note != null) TextSpan(text: '  $note', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline)),
-        ])),
+        child: Text(context.t(key), style: TextStyle(fontWeight: net ? FontWeight.bold : null)),
       ),
       net ? _Amount(v, bold: true) : Text(money(v), style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()])),
     ]),
@@ -274,7 +242,7 @@ class _RecordCard extends StatelessWidget {
           padding: const EdgeInsets.only(right: 8),
           child: Column(children: [
             _row(context, 'money.total', r.total),
-            _row(context, 'money.payout', r.payout, note: context.t('hist.winDetail', {'w': money(r.winAmount), 'o': money(r.odd)})),
+            payoutRow(context, r.payout, r.winAmount, r.odd),
             _row(context, 'money.commission', r.commission),
             _row(context, 'money.payment', r.payment),
             const Divider(height: 12),
@@ -286,7 +254,14 @@ class _RecordCard extends StatelessWidget {
   }
 
   Future<void> _delete(BuildContext context) async {
-    final ok = await confirmDialog(context, context.t('hist.deleteTitle'), context.t('hist.deleteBody', {'name': r.userName}), context.t('common.delete'), danger: true);
-    if (ok && context.mounted) await runOrToast(context, context.read<LedgerStore>(), Ops.finalizedDelete(r.id));
+    final store = context.read<LedgerStore>();
+    final postsToDebt = store.data.debtEntries.any((entry) =>
+        entry.kind == 'settlement' && entry.id == r.id);
+    final body = context.t(
+      postsToDebt ? 'hist.deleteDebtBody' : 'hist.deleteBody',
+      {'name': r.userName},
+    );
+    final ok = await confirmDialog(context, context.t('hist.deleteTitle'), body, context.t('common.delete'), danger: true);
+    if (ok && context.mounted) await runOrToast(context, store, Ops.finalizedDelete(r.id));
   }
 }

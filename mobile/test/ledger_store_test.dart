@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -47,6 +48,49 @@ void main() {
         file: File('${tmp.path}/ledger.json'),
         owner: owner,
       );
+
+  test('client network errors are sent as sanitized diagnostics after reconnection', () async {
+    const snapshot = '/v1/client/ledger/snapshot';
+    final reported = Completer<Map<String, dynamic>>();
+    var offline = true;
+    final api = ApiClient(
+      baseUrl: 'http://test',
+      store: FakeSession(),
+      httpClient: MockClient((request) async {
+        if (offline) throw const SocketException('private transport detail');
+        if (request.url.path == '/v1/client/diagnostics') {
+          expect(request.headers['authorization'], 'Bearer token');
+          reported.complete(jsonDecode(request.body) as Map<String, dynamic>);
+          return http.Response('', 204);
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+    api.setDiagnosticRole('client');
+    await expectLater(api.get(snapshot), throwsA(isA<NetworkException>()));
+    offline = false;
+    await api.get(snapshot);
+    final data = await reported.future.timeout(const Duration(seconds: 5));
+    final event = (data['events'] as List).single as Map;
+    expect(event['category'], 'network');
+    expect(event['operation'], snapshot);
+    expect(event['code'], 'CONNECTION_FAILED');
+    expect(event.keys, unorderedEquals(['at', 'category', 'operation', 'code']));
+  });
+
+  test('failed local voucher selection leaves every voucher and queue entry intact', () async {
+    final store = makeStore(MockClient((_) async => throw const SocketException('offline')));
+    final entry = LEntry(id: 'a', userId: 'u', code: '', mode: 'manual', date: '2026-11-25',
+        createdAt: '', lines: const [Line('25', 100)]);
+    store.data = LedgerData(entries: [entry]);
+    await expectLater(
+      store.runAll([Ops.entryDelete('a'), Ops.entryUpdate('missing', [const Line('25', 200)])]),
+      throwsA(isA<LedgerRule>()),
+    );
+    expect(store.data.entries.single.id, entry.id);
+    expect(store.pending, 0);
+    store.dispose();
+  });
 
   test('offline: changes are applied, saved and survive a restart', () async {
     final offline = MockClient((_) async => throw const SocketException('offline'));
@@ -122,8 +166,14 @@ void main() {
     await expectLater(s.run(Ops.userCreate(user('Aung'))), throwsA(isA<LedgerRule>()));
     await s.run(Ops.blockedSet(['13']));
     final e = LEntry(id: newUuid(), userId: u.id, code: 'V1', mode: 'manual', date: today(), createdAt: '', lines: const [Line('13', 100)]);
-    await expectLater(s.run(Ops.entryCreate(e)), throwsA(isA<LedgerRule>()));
-    expect(s.pending, 2);
+    await s.run(Ops.entryCreate(e));
+    expect(s.data.entries, isEmpty);
+    final log = s.data.blockedLog.single;
+    expect(log.amount, 100);
+    expect(s.pending, 3);
+    await s.run(Ops.blockedLogDelete(log.opId, log.num));
+    expect(s.data.blockedLog, isEmpty);
+    expect(s.pending, 4);
     s.dispose();
   });
 

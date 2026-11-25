@@ -8,6 +8,9 @@ class ClientAccount {
     this.lastLoginAt,
     this.plan,
     this.accessUntil,
+    this.testExpiryEnabled = false,
+    this.testAccessUntil,
+    this.regularAccessUntil,
   });
 
   final String id;
@@ -24,6 +27,8 @@ class ClientAccount {
 
   /// When the client's access ends. After this the client cannot log in or sync (data is kept).
   final DateTime? accessUntil;
+  final bool testExpiryEnabled;
+  final DateTime? testAccessUntil, regularAccessUntil;
 
   bool get expired => accessUntil == null || !accessUntil!.isAfter(DateTime.now());
 
@@ -44,6 +49,9 @@ class ClientAccount {
         lastLoginAt: _date(j['lastLoginAt']),
         plan: j['plan'] as String?,
         accessUntil: _date(j['accessUntil']),
+        testExpiryEnabled: j['testExpiryEnabled'] == true,
+        testAccessUntil: _date(j['testAccessUntil']),
+        regularAccessUntil: _date(j['regularAccessUntil']),
       );
 
   static DateTime? _date(Object? v) => v == null ? null : DateTime.parse(v as String).toLocal();

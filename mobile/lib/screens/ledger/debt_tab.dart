@@ -19,7 +19,9 @@ class DebtTab extends StatelessWidget {
       accounts.putIfAbsent(entry.userId, () => []).add(entry);
     }
     final names = {for (final user in data.users) user.id: user.name};
-    final total = data.debtEntries.fold(0, (sum, entry) => sum + entry.changeCents);
+    final balances = data.debtBalances.values;
+    final receivable = balances.where((value) => value > 0).fold(0, (sum, value) => sum + value);
+    final payable = balances.where((value) => value < 0).fold(0, (sum, value) => sum - value);
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
@@ -27,7 +29,10 @@ class DebtTab extends StatelessWidget {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: KV(context.t('debt.outstanding'), money(total / 100), bold: true),
+              child: Column(children: [
+                KV(context.t('debt.outstanding'), money(receivable / 100), bold: true),
+                if (payable > 0) KV(context.t('debt.payable'), money(payable / 100), bold: true),
+              ]),
             ),
           ),
           if (accounts.isEmpty)
@@ -141,18 +146,29 @@ class _DebtAccount extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final balance = entries.fold(0, (sum, entry) => sum + entry.changeCents);
+    int sessionOrder(String? session) => switch (session) {
+      'morning' => 1,
+      'evening' => 2,
+      _ => 0,
+    };
     final ordered = [...entries]..sort((a, b) {
       final date = b.date.compareTo(a.date);
-      return date == 0 ? b.createdAt.compareTo(a.createdAt) : date;
+      if (date != 0) return date;
+      final session = sessionOrder(b.session).compareTo(sessionOrder(a.session));
+      return session == 0 ? b.createdAt.compareTo(a.createdAt) : session;
     });
     return Card(
       child: ExpansionTile(
         title: Text(name),
-        subtitle: Text('${context.t('debt.outstanding')}  ${money(balance / 100)}'),
+        subtitle: Text('${context.t(balance < 0 ? 'debt.payable' : 'debt.outstanding')}  ${money(balance.abs() / 100)}'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
           for (final entry in ordered)
-            KV('${entry.date} · ${context.t('debt.${entry.kind}')}', money(entry.amount)),
+            KV([
+              entry.date,
+              if (entry.session case final session?) sessionLabel(context, session),
+              context.t('debt.${entry.kind}'),
+            ].join(' · '), money(entry.amount)),
           if (balance > 0)
             Align(
               alignment: Alignment.centerRight,

@@ -1,3 +1,4 @@
+import { clientAccessUntil } from '../access.js';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { config } from '../config.js';
@@ -129,7 +130,7 @@ async function clientLogin(req: Request, rawEmail: string, rawCode: string) {
         await pool.query<ClientRow>(
           `SELECT id, display_name, is_active,
                   (locked_until IS NOT NULL AND locked_until > now()) AS locked,
-                  (access_until IS NULL OR access_until <= now()) AS expired
+                  (COALESCE(${clientAccessUntil} <= now(), true)) AS expired
              FROM clients WHERE email = $1`,
           [email]
         )
@@ -176,7 +177,13 @@ async function clientLogin(req: Request, rawEmail: string, rawCode: string) {
 
   // Plan ended: refuse, but only after the code was checked (so this can't be used to probe emails),
   // and without using up the code — it works again as soon as the Admin extends the plan.
-  if (client!.expired) throw new HttpError(403, 'PLAN_EXPIRED', 'Your plan has ended. Please contact the Admin to renew.');
+  if (client!.expired) {
+    await writeAudit(pool, {
+      actorType: 'client', actorId: client!.id,
+      action: 'auth.client_login_expired', entityType: 'client', entityId: client!.id
+    });
+    throw new HttpError(403, 'PLAN_EXPIRED', 'Your plan has ended. Please contact the Admin to renew.');
+  }
 
   return withTransaction(async (db) => {
     // Single use: the UPDATE only succeeds for the first request that uses this code.

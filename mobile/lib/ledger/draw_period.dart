@@ -13,18 +13,23 @@ DateTime nextDrawPeriod(DateTime time) => time.hour < 13
     ? DateTime(time.year, time.month, time.day, 13)
     : DateTime(time.year, time.month, time.day + 1);
 
-bool _inPeriod(String date, String createdAt, DrawPeriod period) {
+/// Legacy vouchers did not store a session. Match the backend's Yangon cutoff.
+String legacyDrawSession(DateTime timestamp) =>
+    drawSession(timestamp.toUtc().add(const Duration(hours: 6, minutes: 30)));
+
+bool _inPeriod(String date, String? session, String createdAt, DrawPeriod period) {
   if (date != period.date) return false;
-  final created = DateTime.tryParse(createdAt)?.toLocal();
-  return created != null && drawSession(created) == period.session;
+  if (session != null) return session == period.session;
+  final created = DateTime.tryParse(createdAt);
+  return created != null && legacyDrawSession(created) == period.session;
 }
 
 extension DrawPeriodData on LedgerData {
   List<LEntry> entriesFor(DrawPeriod period) =>
-      entries.where((e) => _inPeriod(e.date, e.createdAt, period)).toList();
+      entries.where((e) => _inPeriod(e.date, e.session, e.createdAt, period)).toList();
 
   List<LCover> coversFor(DrawPeriod period) =>
-      coverVouchers.where((v) => _inPeriod(v.date, v.createdAt, period)).toList();
+      coverVouchers.where((v) => _inPeriod(v.date, v.session, v.createdAt, period)).toList();
 
   LDraw? drawFor(DrawPeriod period) => drawResults.where((draw) =>
       draw.date == period.date &&

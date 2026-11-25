@@ -11,6 +11,7 @@ const schema = z.object({
   MAX_FAILED_LOGINS: z.coerce.number().int().positive().default(5),
   LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
   LOGIN_CODE_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+  ENABLE_TEST_EXPIRY_EDIT: z.enum(['true', 'false']).default('false'),
   TRUST_PROXY: z.coerce.number().int().min(0).default(0)
 });
 

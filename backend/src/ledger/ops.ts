@@ -33,7 +33,8 @@ const userFields = {
   username: z.string().trim().min(1).max(50),
   commissionPercent: z.number().min(0).max(100),
   odd: z.number().min(0).max(100000),
-  payment: z.number().min(0).max(1e12).nullable()
+  payment: z.number().min(0).max(1e12).nullable(),
+  settlementSchedule: z.enum(['daily', 'weekly']).optional()
 };
 const opId = uuid;
 
@@ -41,13 +42,14 @@ export const opSchema = z.discriminatedUnion('type', [
   z.object({ opId, type: z.literal('user.create'), id: uuid, ...userFields }).strict(),
   z.object({ opId, type: z.literal('user.update'), id: uuid, ...userFields }).strict(),
   z.object({ opId, type: z.literal('user.delete'), id: uuid }).strict(),
-  z.object({ opId, type: z.literal('entry.create'), id: uuid, userId: uuid, code: z.string().max(20).optional(), mode: z.enum(['format', 'manual']), date: dateStr, createdAt: z.string().max(40).optional(), lines }).strict(),
-  z.object({ opId, type: z.literal('entry.update'), id: uuid, lines }).strict(),
+  z.object({ opId, type: z.literal('entry.create'), id: uuid, userId: uuid, code: z.string().max(20).optional(), mode: z.enum(['format', 'manual']), date: dateStr, session: session.optional(), createdAt: z.string().max(40).optional(), lines }).strict(),
+  z.object({ opId, type: z.literal('entry.update'), id: uuid, createdAt: z.string().max(40).optional(), lines }).strict(),
   z.object({ opId, type: z.literal('entry.delete'), id: uuid }).strict(),
+  z.object({ opId, type: z.literal('blocked.log.delete'), blockedOpId: uuid, num: num2 }).strict(),
   z.object({ opId, type: z.literal('blocked.set'), numbers: z.array(num2).max(100) }).strict(),
   z.object({ opId, type: z.literal('draw.save'), date: dateStr, session, number: num2 }).strict(),
   z.object({ opId, type: z.literal('draw.delete'), date: dateStr, session }).strict(),
-  z.object({ opId, type: z.literal('cover.create'), id: uuid, code: z.string().max(20).optional(), requestedAmount: z.number().int().positive().max(1e12), date: dateStr, createdAt: z.string().max(40).optional() }).strict(),
+  z.object({ opId, type: z.literal('cover.create'), id: uuid, code: z.string().max(20).optional(), requestedAmount: z.number().int().positive().max(1e12), date: dateStr, session: session.optional(), createdAt: z.string().max(40).optional() }).strict(),
   z.object({ opId, type: z.literal('cover.delete'), id: uuid }).strict(),
   z.object({ opId, type: z.literal('finalize'), date: dateStr, session, recordIds: z.record(uuid, uuid).default({}) }).strict(),
   z.object({ opId, type: z.literal('finalized.delete'), id: uuid }).strict(),
@@ -90,39 +92,58 @@ async function freshCode(c: Ctx, table: 'ledger_entries' | 'cover_vouchers', pre
 
 async function loadActiveUser(c: Ctx, id: string, lock = false) {
   const { rows } = await c.db.query(
-    `SELECT id, name, username, commission_percent, odd, payment FROM ledger_users
+    `SELECT id, name, username, commission_percent, odd, payment, settlement_schedule FROM ledger_users
       WHERE client_id = $1 AND id = $2 AND deleted_at IS NULL${lock ? ' FOR UPDATE' : ''}`,
     [c.clientId, id]
   );
-  return rows[0] as { id: string; name: string; username: string; commission_percent: string; odd: string; payment: string | null } | undefined;
+  return rows[0] as { id: string; name: string; username: string; commission_percent: string; odd: string; payment: string | null; settlement_schedule: string } | undefined;
 }
-const userDto = (r: { name: string; username: string; commission_percent: string; odd: string; payment: string | null }) => ({
-  name: r.name, username: r.username, commissionPercent: num(r.commission_percent), odd: num(r.odd), payment: r.payment === null ? null : num(r.payment)
+const userDto = (r: { name: string; username: string; commission_percent: string; odd: string; payment: string | null; settlement_schedule: string }) => ({
+  name: r.name, username: r.username, commissionPercent: num(r.commission_percent), odd: num(r.odd), payment: r.payment === null ? null : num(r.payment),
+  settlementSchedule: r.settlement_schedule
 });
 
-async function activeEntryLines(c: Ctx): Promise<{ id: string; userId: string; date: string; lines: Line[] }[]> {
-  const { rows } = await c.db.query(
-    `SELECT e.id, e.ledger_user_id, to_char(e.entry_date, 'YYYY-MM-DD') AS d, l.number, l.amount::float8 AS amount
-       FROM ledger_entries e JOIN ledger_lines l ON l.entry_id = e.id
-      WHERE e.client_id = $1 AND e.deleted_at IS NULL AND e.finalized_at IS NULL
-      ORDER BY e.created_at, e.id, l.line_no`,
-    [c.clientId]
-  );
-  const byId = new Map<string, { id: string; userId: string; date: string; lines: Line[] }>();
-  for (const r of rows) {
-    let e = byId.get(r.id);
-    if (!e) byId.set(r.id, (e = { id: r.id, userId: r.ledger_user_id, date: r.d, lines: [] }));
-    e.lines.push({ num: String(r.number).trim(), amount: num(r.amount) });
-  }
-  return [...byId.values()];
+type DrawPeriod = { date: string; session: z.infer<typeof session> };
+
+const yangonHour = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Yangon', hour: 'numeric', hourCycle: 'h23' });
+
+function sessionFor(timestamp: Date | null): DrawPeriod['session'] {
+  return Number(yangonHour.format(timestamp ?? new Date())) < 13 ? 'morning' : 'evening';
 }
 
-async function activeCovers(c: Ctx): Promise<LCover[]> {
+async function requireOpenDraw(c: Ctx, period: DrawPeriod) {
+  const done = await c.db.query(
+    'SELECT 1 FROM finalized_records WHERE client_id = $1 AND draw_date = $2 AND session = $3 AND deleted_at IS NULL LIMIT 1',
+    [c.clientId, period.date, period.session]
+  );
+  if (done.rowCount) throw new OpError('ALREADY_FINALIZED', 'This draw is already finalized.');
+}
+
+async function activeEntryLines(c: Ctx, period: DrawPeriod): Promise<{ userId: string; lines: Line[] }[]> {
+  const { rows } = await c.db.query(
+    `SELECT e.ledger_user_id, l.number, l.amount::float8 AS amount
+       FROM ledger_entries e JOIN ledger_lines l ON l.entry_id = e.id
+      WHERE e.client_id = $1 AND e.entry_date = $2 AND e.session = $3
+        AND e.deleted_at IS NULL AND e.finalized_at IS NULL
+      ORDER BY e.created_at, e.id, l.line_no`,
+    [c.clientId, period.date, period.session]
+  );
+  const byUser = new Map<string, Line[]>();
+  for (const row of rows) {
+    const lines = byUser.get(row.ledger_user_id) ?? [];
+    lines.push({ num: String(row.number).trim(), amount: num(row.amount) });
+    byUser.set(row.ledger_user_id, lines);
+  }
+  return [...byUser].map(([userId, lines]) => ({ userId, lines }));
+}
+
+async function activeCovers(c: Ctx, period: DrawPeriod): Promise<LCover[]> {
   const { rows } = await c.db.query(
     `SELECT v.id, v.seq::text AS seq, v.requested_amount::float8 AS requested, a.number, a.amount::float8 AS amount, a.kind
        FROM cover_vouchers v LEFT JOIN cover_allocations a ON a.cover_voucher_id = v.id
-      WHERE v.client_id = $1 AND v.deleted_at IS NULL AND v.finalized_at IS NULL ORDER BY v.seq`,
-    [c.clientId]
+      WHERE v.client_id = $1 AND v.voucher_date = $2 AND v.session = $3
+        AND v.deleted_at IS NULL AND v.finalized_at IS NULL ORDER BY v.seq`,
+    [c.clientId, period.date, period.session]
   );
   const byId = new Map<string, LCover>();
   for (const r of rows) {
@@ -133,28 +154,62 @@ async function activeCovers(c: Ctx): Promise<LCover[]> {
   return [...byId.values()];
 }
 
+async function excludeBlocked(c: Ctx, opId: string, userId: string, userName: string, submitted: Line[], createdAt: Date | null) {
+  const numbers = [...new Set(submitted.map((line) => line.num))];
+  const { rows } = await c.db.query(
+    'SELECT trim(number) AS number FROM blocked_numbers WHERE client_id = $1 AND number::text = ANY($2::text[])',
+    [c.clientId, numbers]
+  );
+  const blocked = new Set(rows.map((row) => row.number));
+  const kept: Line[] = [];
+  const excluded = new Map<string, number>();
+  for (const line of submitted) {
+    if (blocked.has(line.num)) excluded.set(line.num, (excluded.get(line.num) ?? 0) + line.amount);
+    else kept.push(line);
+  }
+  const rejected = [...excluded].map(([num, amount]) => ({ num, amount: round2(amount) }));
+  if (rejected.length) {
+    await c.db.query(
+      `INSERT INTO ledger_blocked_number_log (client_id, op_id, ledger_user_id, user_name, number, amount, created_at)
+       SELECT $1, $2, $3, $4, t.number, t.amount, COALESCE($7::timestamptz, now())
+         FROM unnest($5::text[], $6::numeric[]) AS t(number, amount)`,
+      [c.clientId, opId, userId, userName, rejected.map((line) => line.num), rejected.map((line) => line.amount), createdAt]
+    );
+  }
+  return { kept, rejected };
+}
+
+async function insertEntryLines(db: Db, id: string, lines: Line[]) {
+  await db.query(
+    `INSERT INTO ledger_lines (entry_id, line_no, number, amount)
+     SELECT $1::uuid, t.ord::int, t.num, t.amount FROM unnest($2::text[], $3::numeric[]) WITH ORDINALITY AS t(num, amount, ord)`,
+    [id, lines.map((line) => line.num), lines.map((line) => line.amount)]
+  );
+}
+
 // ------------------------------------------------------------------ handlers
 type Handler<T extends Op['type']> = (c: Ctx, op: Extract<Op, { type: T }>) => Promise<Record<string, unknown> | void>;
 
 const handlers: { [K in Op['type']]: Handler<K> } = {
   async 'user.create'(c, op) {
     await c.db.query(
-      `INSERT INTO ledger_users (id, client_id, client_local_id, name, username, commission_percent, odd, payment)
-       VALUES ($1, $2, $1, $3, $4, $5, $6, $7)`,
-      [op.id, c.clientId, op.name, op.username, op.commissionPercent, op.odd, op.payment]
+      `INSERT INTO ledger_users (id, client_id, client_local_id, name, username, commission_percent, odd, payment, settlement_schedule)
+       VALUES ($1, $2, $1, $3, $4, $5, $6, $7, $8)`,
+      [op.id, c.clientId, op.name, op.username, op.commissionPercent, op.odd, op.payment, op.settlementSchedule ?? 'daily']
     );
-    await audit(c, 'user.create', 'ledger_user', op.id, undefined, { name: op.name, username: op.username, commissionPercent: op.commissionPercent, odd: op.odd, payment: op.payment });
+    await audit(c, 'user.create', 'ledger_user', op.id, undefined, { name: op.name, username: op.username, commissionPercent: op.commissionPercent, odd: op.odd, payment: op.payment, settlementSchedule: op.settlementSchedule ?? 'daily' });
   },
 
   async 'user.update'(c, op) {
     const before = await loadActiveUser(c, op.id, true);
     if (!before) throw new OpError('USER_NOT_FOUND', 'Commission user not found.');
+    const settlementSchedule = op.settlementSchedule ?? before.settlement_schedule;
     await c.db.query(
-      `UPDATE ledger_users SET name = $3, username = $4, commission_percent = $5, odd = $6, payment = $7
+      `UPDATE ledger_users SET name = $3, username = $4, commission_percent = $5, odd = $6, payment = $7, settlement_schedule = $8
         WHERE client_id = $1 AND id = $2`,
-      [c.clientId, op.id, op.name, op.username, op.commissionPercent, op.odd, op.payment]
+      [c.clientId, op.id, op.name, op.username, op.commissionPercent, op.odd, op.payment, settlementSchedule]
     );
-    await audit(c, 'user.update', 'ledger_user', op.id, userDto(before), { name: op.name, username: op.username, commissionPercent: op.commissionPercent, odd: op.odd, payment: op.payment });
+    await audit(c, 'user.update', 'ledger_user', op.id, userDto(before), { name: op.name, username: op.username, commissionPercent: op.commissionPercent, odd: op.odd, payment: op.payment, settlementSchedule });
   },
 
   async 'user.delete'(c, op) {
@@ -164,49 +219,54 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
       if (gone.rowCount) return; // already deleted
       throw new OpError('USER_NOT_FOUND', 'Commission user not found.');
     }
-    // Old vouchers stay as records (same as the HTML): only the user is hidden.
+    const { rows: [links] } = await c.db.query(
+      `SELECT EXISTS (SELECT 1 FROM ledger_entries WHERE client_id = $1 AND ledger_user_id = $2 AND deleted_at IS NULL)
+           OR EXISTS (SELECT 1 FROM finalized_records WHERE client_id = $1 AND ledger_user_id = $2 AND deleted_at IS NULL)
+           OR EXISTS (SELECT 1 FROM ledger_debt_journal WHERE client_id = $1 AND ledger_user_id = $2) AS in_use`,
+      [c.clientId, op.id]
+    );
+    if (links.in_use) throw new OpError('USER_IN_USE', 'This commission user has vouchers, history or debt entries.');
     await c.db.query('UPDATE ledger_users SET deleted_at = now() WHERE client_id = $1 AND id = $2', [c.clientId, op.id]);
     await audit(c, 'user.delete', 'ledger_user', op.id, userDto(before));
   },
 
   async 'entry.create'(c, op) {
-    if (!(await loadActiveUser(c, op.userId))) throw new OpError('USER_NOT_FOUND', 'Commission user not found.');
-    const nums = [...new Set(op.lines.map((l) => l.num))];
-    const blocked = await c.db.query('SELECT number FROM blocked_numbers WHERE client_id = $1 AND number::text = ANY($2::text[])', [c.clientId, nums]);
-    if (blocked.rowCount) throw new OpError('BLOCKED_NUMBER', 'Blocked numbers: ' + blocked.rows.map((r) => String(r.number).trim()).join(', '));
-    const code = await freshCode(c, 'ledger_entries', 'V', op.code);
+    const user = await loadActiveUser(c, op.userId);
+    if (!user) throw new OpError('USER_NOT_FOUND', 'Commission user not found.');
     const createdAt = deviceTimestamp(op.createdAt);
+    const { kept, rejected } = await excludeBlocked(c, op.opId, user.id, user.name, op.lines, createdAt);
+    if (!kept.length) return { saved: false, rejected };
+    const code = await freshCode(c, 'ledger_entries', 'V', op.code);
+    const drawSession = op.session ?? sessionFor(createdAt);
+    await requireOpenDraw(c, { date: op.date, session: drawSession });
     await c.db.query(
-      `INSERT INTO ledger_entries (id, client_id, client_local_id, ledger_user_id, voucher_code, entry_mode, entry_date, device_created_at)
-       VALUES ($1, $2, $1, $3, $4, $5, $6, $7)`,
-      [op.id, c.clientId, op.userId, code, op.mode, op.date, createdAt]
+      `INSERT INTO ledger_entries (id, client_id, client_local_id, ledger_user_id, voucher_code, entry_mode, entry_date, device_created_at, session)
+       VALUES ($1, $2, $1, $3, $4, $5, $6, $7, $8)`,
+      [op.id, c.clientId, op.userId, code, op.mode, op.date, createdAt, drawSession]
     );
-    await c.db.query(
-      `INSERT INTO ledger_lines (entry_id, line_no, number, amount)
-       SELECT $1::uuid, t.ord::int, t.num, t.amount FROM unnest($2::text[], $3::numeric[]) WITH ORDINALITY AS t(num, amount, ord)`,
-      [op.id, op.lines.map((l) => l.num), op.lines.map((l) => l.amount)]
-    );
-    await audit(c, 'entry.create', 'ledger_entry', op.id, undefined, { code, userId: op.userId, mode: op.mode, date: op.date, lines: op.lines });
-    return { code };
+    await insertEntryLines(c.db, op.id, kept);
+    await audit(c, 'entry.create', 'ledger_entry', op.id, undefined, { code, userId: op.userId, mode: op.mode, date: op.date, session: drawSession, lines: kept });
+    return { code, saved: true, rejected };
   },
 
   async 'entry.update'(c, op) {
-    const { rows } = await c.db.query(
-      'SELECT voucher_code, finalized_at FROM ledger_entries WHERE client_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE',
+    const { rows: [entry] } = await c.db.query(
+      `SELECT e.voucher_code, e.finalized_at, e.ledger_user_id, u.name
+         FROM ledger_entries e JOIN ledger_users u ON u.id = e.ledger_user_id
+        WHERE e.client_id = $1 AND e.id = $2 AND e.deleted_at IS NULL FOR UPDATE OF e`,
       [c.clientId, op.id]
     );
-    if (!rows[0]) throw new OpError('ENTRY_NOT_FOUND', 'Voucher not found.');
-    if (rows[0].finalized_at) throw new OpError('ENTRY_FINALIZED', 'This voucher is finalized and cannot be changed.');
+    if (!entry) throw new OpError('ENTRY_NOT_FOUND', 'Voucher not found.');
+    if (entry.finalized_at) throw new OpError('ENTRY_FINALIZED', 'This voucher is finalized and cannot be changed.');
+    const { kept, rejected } = await excludeBlocked(c, op.opId, entry.ledger_user_id, entry.name, op.lines, deviceTimestamp(op.createdAt));
+    if (!kept.length) return { saved: false, rejected };
     const old = await c.db.query('SELECT number, amount::float8 AS amount FROM ledger_lines WHERE entry_id = $1 ORDER BY line_no', [op.id]);
     await c.db.query('DELETE FROM ledger_lines WHERE entry_id = $1', [op.id]);
-    await c.db.query(
-      `INSERT INTO ledger_lines (entry_id, line_no, number, amount)
-       SELECT $1::uuid, t.ord::int, t.num, t.amount FROM unnest($2::text[], $3::numeric[]) WITH ORDINALITY AS t(num, amount, ord)`,
-      [op.id, op.lines.map((l) => l.num), op.lines.map((l) => l.amount)]
-    );
+    await insertEntryLines(c.db, op.id, kept);
     await c.db.query('UPDATE ledger_entries SET updated_at = now() WHERE id = $1', [op.id]);
     await audit(c, 'entry.update', 'ledger_entry', op.id,
-      { code: rows[0].voucher_code, lines: old.rows.map((r) => ({ num: String(r.number).trim(), amount: num(r.amount) })) }, { lines: op.lines });
+      { code: entry.voucher_code, lines: old.rows.map((r) => ({ num: String(r.number).trim(), amount: num(r.amount) })) }, { lines: kept });
+    return { saved: true, rejected };
   },
 
   async 'entry.delete'(c, op) {
@@ -220,6 +280,21 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     const old = await c.db.query('SELECT number, amount::float8 AS amount FROM ledger_lines WHERE entry_id = $1 ORDER BY line_no', [op.id]);
     await c.db.query('UPDATE ledger_entries SET deleted_at = now() WHERE id = $1', [op.id]);
     await audit(c, 'entry.delete', 'ledger_entry', op.id, { code: rows[0].voucher_code, lines: old.rows.map((r) => ({ num: String(r.number).trim(), amount: num(r.amount) })) });
+  },
+
+  async 'blocked.log.delete'(c, op) {
+    const { rows: [removed] } = await c.db.query(
+      `DELETE FROM ledger_blocked_number_log
+        WHERE client_id = $1 AND op_id = $2 AND number = $3
+       RETURNING ledger_user_id, user_name, number, amount::float8 AS amount, created_at`,
+      [c.clientId, op.blockedOpId, op.num]
+    );
+    if (removed) {
+      await audit(c, 'blocked.log.delete', 'blocked_number_log', op.blockedOpId, {
+        userId: removed.ledger_user_id, userName: removed.user_name,
+        num: op.num, amount: removed.amount, createdAt: removed.created_at
+      });
+    }
   },
 
   async 'blocked.set'(c, op) {
@@ -253,8 +328,11 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
   },
 
   async 'cover.create'(c, op) {
-    const entries = await activeEntryLines(c);
-    const covers = await activeCovers(c);
+    const createdAt = deviceTimestamp(op.createdAt);
+    const period = { date: op.date, session: op.session ?? sessionFor(createdAt) };
+    await requireOpenDraw(c, period);
+    const entries = await activeEntryLines(c, period);
+    const covers = await activeCovers(c, period);
     const locked = lockedEat(covers);
     if (locked !== null && locked !== op.requestedAmount) {
       throw new OpError('EAT_LOCKED', `စားငွေကို ပထမကာဘောင်ချာအတိုင်း ${locked} သာ သုံးနိုင်သည်။`);
@@ -263,9 +341,9 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     if (!made) throw new OpError('NO_COVER', 'ကာငွေမရှိပါ — nothing left to cover.');
     const code = await freshCode(c, 'cover_vouchers', 'C', op.code);
     await c.db.query(
-      `INSERT INTO cover_vouchers (id, client_id, client_local_id, voucher_code, requested_amount, cover_list_total, voucher_date, device_created_at)
-       VALUES ($1, $2, $1, $3, $4, $5, $6, $7)`,
-      [op.id, c.clientId, code, op.requestedAmount, made.remainingTotal, op.date, deviceTimestamp(op.createdAt)]
+      `INSERT INTO cover_vouchers (id, client_id, client_local_id, voucher_code, requested_amount, cover_list_total, voucher_date, device_created_at, session)
+       VALUES ($1, $2, $1, $3, $4, $5, $6, $7, $8)`,
+      [op.id, c.clientId, code, op.requestedAmount, made.remainingTotal, op.date, createdAt, period.session]
     );
     const rowsToInsert = [
       ...made.allocations.map((a) => ({ ...a, kind: 'eaten' })),
@@ -303,17 +381,13 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     );
     if (!draw.rows[0]) throw new OpError('DRAW_NOT_FOUND', 'No draw result for this date and session.');
     const winning = String(draw.rows[0].number).trim();
-    const done = await c.db.query(
-      `SELECT 1 FROM finalized_records WHERE client_id = $1 AND draw_date = $2 AND session = $3 AND deleted_at IS NULL LIMIT 1`,
-      [c.clientId, op.date, op.session]
-    );
-    if (done.rowCount) throw new OpError('ALREADY_FINALIZED', 'This draw is already finalized.');
+    await requireOpenDraw(c, op);
 
     const users = await c.db.query(
-      'SELECT id, name, commission_percent, odd, payment FROM ledger_users WHERE client_id = $1 AND deleted_at IS NULL ORDER BY created_at, id FOR UPDATE',
+      'SELECT id, name, commission_percent, odd, payment, settlement_schedule FROM ledger_users WHERE client_id = $1 AND deleted_at IS NULL ORDER BY created_at, id FOR UPDATE',
       [c.clientId]
     );
-    const entries = (await activeEntryLines(c)).filter((e) => e.date === op.date);
+    const entries = await activeEntryLines(c, op);
     const summary: Record<string, unknown>[] = [];
     const settledIds: string[] = [];
     for (const u of users.rows) {
@@ -323,26 +397,27 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
       if (s.total === 0) continue;
       settledIds.push(u.id);
       const recordId = op.recordIds[u.id];
+      const postsToDebt = u.settlement_schedule === 'weekly';
       await c.db.query(
         `INSERT INTO finalized_records
-           (id, client_id, ledger_user_id, user_name, draw_date, session, winning_number, total_stake, win_stake, odd, payout, commission_percent, commission, payment, net)
-         VALUES (COALESCE($15::uuid, gen_random_uuid()), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [c.clientId, u.id, u.name, op.date, op.session, winning, round2(s.total), round2(s.winAmount), s.odd, round2(s.payout), s.commissionPercent, round2(s.commission), round2(s.payment), round2(s.net), recordId ?? null]
+           (id, client_id, ledger_user_id, user_name, draw_date, session, winning_number, total_stake, win_stake, odd, payout, commission_percent, commission, payment, net, posts_to_debt)
+         VALUES (COALESCE($15::uuid, gen_random_uuid()), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $16)`,
+        [c.clientId, u.id, u.name, op.date, op.session, winning, round2(s.total), round2(s.winAmount), s.odd, round2(s.payout), s.commissionPercent, round2(s.commission), round2(s.payment), round2(s.net), recordId ?? null, postsToDebt]
       );
-      summary.push({ user: u.name, total: round2(s.total), net: round2(s.net) });
+      summary.push({ user: u.name, total: round2(s.total), net: round2(s.net), postsToDebt });
     }
     if (!settledIds.length) throw new OpError('NOTHING_TO_FINALIZE', 'No commission user has a stake on this date.');
     // The next settlement starts with an empty payment (HTML behaviour) — for the users that were settled.
     await c.db.query('UPDATE ledger_users SET payment = NULL WHERE client_id = $1 AND id = ANY($2::uuid[])', [c.clientId, settledIds]);
     // The date's vouchers leave the active list but are kept, frozen, for the audit trail.
     const frozen = await c.db.query(
-      `UPDATE ledger_entries SET finalized_at = now() WHERE client_id = $1 AND entry_date = $2 AND deleted_at IS NULL AND finalized_at IS NULL`,
-      [c.clientId, op.date]
+      `UPDATE ledger_entries SET finalized_at = now() WHERE client_id = $1 AND entry_date = $2 AND session = $3 AND deleted_at IS NULL AND finalized_at IS NULL`,
+      [c.clientId, op.date, op.session]
     );
     // A finalize closes the cover period: active cover vouchers are frozen and the eat amount can be chosen again.
     const coversClosed = await c.db.query(
-      'UPDATE cover_vouchers SET finalized_at = now() WHERE client_id = $1 AND deleted_at IS NULL AND finalized_at IS NULL',
-      [c.clientId]
+      'UPDATE cover_vouchers SET finalized_at = now() WHERE client_id = $1 AND voucher_date = $2 AND session = $3 AND deleted_at IS NULL AND finalized_at IS NULL',
+      [c.clientId, op.date, op.session]
     );
     await audit(c, 'finalize', 'client', c.clientId, undefined, { date: op.date, session: op.session, number: winning, vouchersFrozen: frozen.rowCount, coversClosed: coversClosed.rowCount, records: summary });
   },
@@ -364,8 +439,8 @@ const handlers: { [K in Op['type']]: Handler<K> } = {
     if (op.kind === 'repayment') {
       const { rows: balances } = await c.db.query(
         `WITH days AS (
-           SELECT entry_date, SUM(CASE WHEN kind = 'debt' THEN amount ELSE -amount END) AS change
-             FROM ledger_debt_entries WHERE client_id = $1 AND ledger_user_id = $2
+           SELECT entry_date, SUM(CASE WHEN kind = 'repayment' THEN -amount ELSE amount END) AS change
+             FROM ledger_debt_journal WHERE client_id = $1 AND ledger_user_id = $2
             GROUP BY entry_date
          ), running AS (
            SELECT entry_date, SUM(SUM(change)) OVER (ORDER BY entry_date) AS balance

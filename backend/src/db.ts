@@ -1,7 +1,11 @@
 import pg from 'pg';
 import { config } from './config.js';
+import { errorCode, recordDiagnostic } from './diagnostics.js';
 
 export const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 10 });
+pool.on('error', (error) => recordDiagnostic({
+  category: 'database', source: 'server', operation: 'postgres.pool', code: errorCode(error) ?? 'DATABASE_CONNECTION_ERROR'
+}));
 
 /** Minimal query interface satisfied by both Pool and PoolClient. */
 export interface Db {
